@@ -1,9 +1,12 @@
-# OpeNreal
-[![Crates.io](https://img.shields.io/crates/v/openreal.svg)](https://crates.io/crates/openreal)
-[![Docs.rs](https://docs.rs/openreal/badge.svg)](https://docs.rs/openreal)
+# AR drivers
+[![Crates.io](https://img.shields.io/crates/v/ar-drivers.svg)](https://crates.io/crates/ar-drivers)
+[![Docs.rs](https://docs.rs/ar-drivers/badge.svg)](https://docs.rs/ar-drivers)
 
-OpeNreal is a simplified driver for Nreal Air (and possibly other) AR glasses.
+This repository contains is a simplified driver for Rokid Air (and possibly other) AR glasses.
 It supports getting basic sensor data and setting up the display.
+
+While only the Rokid glasses is supported right now, if I could get my hands on some other
+ones, I'd happily implement them too.
 
 It only uses `rusb` for communication.
 
@@ -14,7 +17,7 @@ at the code and reimplement it in any other language, since it's so simple.
 
 I appreciate reported bugs, feature requests and of course pull request.
 
-I'd love to get my hands on an Nreal Lite, so if you have a spare one you'd
+I'd love to get my hands on an Rokid Lite, an Nreal or Moverio so if you have a spare one you'd
 throw out, you could mail it to me instead :)
 
 ## License
@@ -23,8 +26,8 @@ Licensed under the MIT license
 
 ## Legal stuff
 
-The protocol was obtained by reverse engineering Nreal's proprietary driver.
+The protocol was obtained by reverse engineering Rokid's proprietary driver.
 This is explicitly allowed in the EU for interworking purposes, it's probably
 fair use everywhere else, but you should check your own country's laws.
 
-The project is not affiliated with Nreal or related entities. 
+The project is not affiliated with Rokid or related entities. 

@@ -1,8 +1,9 @@
 // Copyright (C) 2023, Alex Badics
-// This file is part of openreal
+// This file is part of ar-drivers-rs
 // Licensed under the MIT license. See LICENSE file in the project root for details.
+
 #![warn(missing_docs)]
-//! OpeNreal is a simplified driver for Nreal Air (and possibly other) AR glasses.
+//! This crate contains a simplified driver for Rokid Air (and possibly other) AR glasses.
 //! It supports getting basic sensor data and setting up the display.
 //! It only uses [`rusb`] for communication.
 //!
@@ -19,7 +20,7 @@
 //! }
 //! ```
 //!
-//! As opposed to Nreal's own API, this is all that you get, since this is what comes
+//! As opposed to Rokid's own API, this is all that you get, since this is what comes
 //! out of the hardware. To get quaternions, you should probably use a lib that implements
 //! Madgwicks algorithm or a proper EKF. One good choice is the `eskf` crate.
 
@@ -33,7 +34,7 @@ pub struct Glasses {
     device_handle: DeviceHandle<GlobalContext>,
 }
 
-/// Possible errors resulting from `openreal` API calls
+/// Possible errors resulting from `ar-drivers` API calls
 #[derive(Debug, Clone)]
 pub enum Error {
     /// An rusb error happened. See [`rusb::Error`] for specifics
@@ -77,7 +78,7 @@ pub struct SensorData3D {
 /// Container for other sensor data
 #[derive(Debug, Clone)]
 pub struct MiscSensors {
-    /// Keys pressed. On the Nreal Air, the only button is the brightness button,
+    /// Keys pressed. On the Rokid Air, the only button is the brightness button,
     /// And it corresponds to the value `4`
     pub keys: u8,
     /// Proximity sensor report. `true` if the user is currently wearing the glasses
@@ -99,7 +100,7 @@ const INTERRUPT_IN_ENDPOINT: u8 = 0x82;
 const TIMEOUT: Duration = Duration::from_millis(250);
 
 impl Glasses {
-    /// Find a connected Nreal Air device and connect to it. (And claim the USB interface)
+    /// Find a connected Rokid Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     pub fn new() -> Result<Self> {
         let device = Self::get_rusb_device()?;
