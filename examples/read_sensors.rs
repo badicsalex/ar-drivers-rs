@@ -10,8 +10,6 @@ fn main() {
 
     loop {
         let event = glasses.read_event().unwrap();
-        if matches!(event, GlassesEvent::Magnetometer(_)) {
-            println!("Event: {:?}", event);
-        }
+        println!("Event: {:#?}", event);
     }
 }
