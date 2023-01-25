@@ -14,3 +14,4 @@ license = "MIT"
 
 [dependencies]
 rusb = "0.9.1"
+byteorder = "1.4"
