@@ -2,13 +2,10 @@
 // This file is part of openreal
 // Licensed under the MIT license. See LICENSE file in the project root for details.
 
-use std::{ffi::CStr, io::Cursor, time::Duration};
+use std::{io::Cursor, time::Duration};
 
 use byteorder::{ReadBytesExt, LE};
-use rusb::{
-    request_type, Device, DeviceDescriptor, DeviceHandle, DeviceList, GlobalContext, Interface,
-    InterfaceDescriptor,
-};
+use rusb::{request_type, Device, DeviceHandle, DeviceList, GlobalContext};
 
 pub struct Glasses {
     device_handle: DeviceHandle<GlobalContext>,
@@ -45,7 +42,7 @@ pub struct MiscSensors {
     pub proximity: bool,
 }
 
-pub enum DisplayMode{
+pub enum DisplayMode {
     SameOnBoth = 0,
     Stereo = 1,
 }
@@ -119,7 +116,6 @@ impl Glasses {
             self.device_handle
                 .read_interrupt(INTERRUPT_IN_ENDPOINT, &mut result, TIMEOUT)?;
             if result[0] == 2 {
-                eprintln!("{result:?}");
                 return Ok(GlassesEvent::Misc(MiscSensors {
                     keys: result[47],
                     proximity: result[51] == 0,
@@ -160,7 +156,6 @@ impl Glasses {
         )?;
         Ok(())
     }
-
 }
 
 impl From<rusb::Error> for Error {
