@@ -1,0 +1,16 @@
+[package]
+name = "openreal"
+description = "Opensource driver for Nreal Air AR glasses"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["Alex Badics <admin@stickman.hu>"]
+repository = "https://github.com/badicsalex/openreal"
+documentation = "https://docs.rs/openreal"
+keywords = ["nreal", "ar"]
+categories = ["hardware-support"]
+license = "MIT"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rusb = "0.9.1"
