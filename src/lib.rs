@@ -45,6 +45,11 @@ pub struct MiscSensors {
     pub proximity: bool,
 }
 
+pub enum DisplayMode{
+    SameOnBoth = 0,
+    Stereo = 1,
+}
+
 /* This is actually hardcoded in the SDK too, except for PID==0x162d, where it's 0x83 */
 const INTERRUPT_IN_ENDPOINT: u8 = 0x82;
 
@@ -139,6 +144,23 @@ impl Glasses {
             }
         }
     }
+
+    pub fn set_display_mode(&self, display_mode: DisplayMode) -> Result<()> {
+        self.device_handle.write_control(
+            request_type(
+                rusb::Direction::Out,
+                rusb::RequestType::Vendor,
+                rusb::Recipient::Device,
+            ),
+            0x1,
+            display_mode as u16,
+            0x1,
+            &[0u8; 1],
+            TIMEOUT,
+        )?;
+        Ok(())
+    }
+
 }
 
 impl From<rusb::Error> for Error {
