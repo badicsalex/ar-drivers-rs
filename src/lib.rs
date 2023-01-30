@@ -3,13 +3,12 @@
 // Licensed under the MIT license. See LICENSE file in the project root for details.
 
 #![warn(missing_docs)]
-//! This crate contains a simplified driver for Rokid Air (and possibly other) AR glasses.
+//! This crate contains a simplified driver for Rokid Air and Mad Gaze Glow AR glasses.
 //! It supports getting basic sensor data and setting up the display.
-//! It only uses [`rusb`] for communication.
 //!
 //! Example usage (in a thread, probably):
 //! ```ignore
-//! let glasses = Glasses::new().unwrap();
+//! let mut glasses = any_glasses().unwrap();
 //! loop {
 //!     match glasses.read_event().unwrap() {
 //!         GlassesEvent::Accelerometer(data) => ...,
@@ -20,25 +19,25 @@
 //! }
 //! ```
 //!
-//! As opposed to Rokid's own API, this is all that you get, since this is what comes
+//! As opposed to e.g. Rokid's own API, this is all that you get, since this is what comes
 //! out of the hardware. To get quaternions, you should probably use a lib that implements
 //! Madgwicks algorithm or a proper EKF. One good choice is the `eskf` crate.
 
-use std::{io::Cursor, time::Duration};
+use mad_gaze::MadGazeGlow;
+use rokid::RokidAir;
 
-use byteorder::{ReadBytesExt, LE};
-use rusb::{request_type, Device, DeviceHandle, DeviceList, GlobalContext};
-
-/// The main structure representing a connected AR glasses
-pub struct Glasses {
-    device_handle: DeviceHandle<GlobalContext>,
-}
+pub mod mad_gaze;
+pub mod rokid;
 
 /// Possible errors resulting from `ar-drivers` API calls
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Error {
+    /// A standard IO error happened. See [`std::io::Error`] for specifics
+    IoError(std::io::Error),
     /// An rusb error happened. See [`rusb::Error`] for specifics
     UsbError(rusb::Error),
+    /// A serialport error happened. See [`serialport::Error`] for specifics
+    SerialPortError(serialport::Error),
     /// No glasses were found.
     NotFound,
     /// Other fatal error, usually a problem with the library itself, or
@@ -94,125 +93,42 @@ pub enum DisplayMode {
     Stereo = 1,
 }
 
-/* This is actually hardcoded in the SDK too, except for PID==0x162d, where it's 0x83 */
-const INTERRUPT_IN_ENDPOINT: u8 = 0x82;
-
-const TIMEOUT: Duration = Duration::from_millis(250);
-
-impl Glasses {
-    /// Find a connected Rokid Air device and connect to it. (And claim the USB interface)
-    /// Only one instance can be alive at a time
-    pub fn new() -> Result<Self> {
-        let device = Self::get_rusb_device()?;
-        let interface_num = Self::get_interrupt_interface(&device)?;
-        let mut device_handle = device.open()?;
-        device_handle.set_auto_detach_kernel_driver(true)?;
-        device_handle.claim_interface(interface_num)?;
-        let result = Self { device_handle };
-        Ok(result)
-    }
-
-    fn get_rusb_device() -> Result<Device<GlobalContext>> {
-        for device in DeviceList::new()?.iter() {
-            if let Ok(desc) = device.device_descriptor() {
-                if desc.vendor_id() == 0x04d2 && desc.product_id() == 0x162f {
-                    return Ok(device);
-                }
-            }
-        }
-        Err(Error::NotFound)
-    }
-
-    fn get_interrupt_interface(device: &Device<GlobalContext>) -> Result<u8> {
-        let config_desc = device.config_descriptor(0)?;
-        for interface in config_desc.interfaces() {
-            for desc in interface.descriptors() {
-                for endpoint in desc.endpoint_descriptors() {
-                    if endpoint.address() == INTERRUPT_IN_ENDPOINT {
-                        return Ok(interface.number());
-                    }
-                }
-            }
-        }
-        Err(Error::Other(
-            "Could not find endpoint, wrong USB structure (probably)",
-        ))
-    }
-
+/// Common interface for AR implemented glasses
+pub trait ARGlasses {
     /// Get the serial number of the glasses
-    pub fn serial(&self) -> Result<String> {
-        let mut result = [0u8; 0x40];
-        self.device_handle.read_control(
-            request_type(
-                rusb::Direction::In,
-                rusb::RequestType::Vendor,
-                rusb::Recipient::Device,
-            ),
-            0x81,
-            0x100,
-            0,
-            &mut result,
-            TIMEOUT,
-        )?;
-        Ok(
-            String::from_utf8(result.iter().copied().take_while(|c| *c != 0).collect())
-                .map_err(|_| "Invalid serial string")?,
-        )
-    }
-
+    fn serial(&mut self) -> Result<String>;
     /// Get a single sensor event. Blocks.
-    pub fn read_event(&self) -> Result<GlassesEvent> {
-        loop {
-            let mut result = [0u8; 0x40];
-            self.device_handle
-                .read_interrupt(INTERRUPT_IN_ENDPOINT, &mut result, TIMEOUT)?;
-            if result[0] == 2 {
-                return Ok(GlassesEvent::Misc(MiscSensors {
-                    keys: result[47],
-                    proximity: result[51] == 0,
-                }));
-            }
-            if result[0] == 4 {
-                let mut cursor = Cursor::new(&result);
-                cursor.set_position(9);
-                let timestamp = cursor.read_u64::<LE>().unwrap();
-                cursor.set_position(21);
-                let x = cursor.read_f32::<LE>().unwrap();
-                let y = cursor.read_f32::<LE>().unwrap();
-                let z = cursor.read_f32::<LE>().unwrap();
-                let sensor_data = SensorData3D { timestamp, x, y, z };
-                match result[1] {
-                    1 => return Ok(GlassesEvent::Accelerometer(sensor_data)),
-                    2 => return Ok(GlassesEvent::Gyroscope(sensor_data)),
-                    // TODO: Magnetometer apparently gives an accuracy value too
-                    3 => return Ok(GlassesEvent::Magnetometer(sensor_data)),
-                    _ => (),
-                }
-            }
-        }
-    }
-
+    fn read_event(&mut self) -> Result<GlassesEvent>;
     /// Set the display mode of the glasses. See [`DisplayMode`]
-    pub fn set_display_mode(&self, display_mode: DisplayMode) -> Result<()> {
-        self.device_handle.write_control(
-            request_type(
-                rusb::Direction::Out,
-                rusb::RequestType::Vendor,
-                rusb::Recipient::Device,
-            ),
-            0x1,
-            display_mode as u16,
-            0x1,
-            &[0u8; 1],
-            TIMEOUT,
-        )?;
-        Ok(())
+    fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()>;
+}
+
+/// Convenience function to detect and connect to any of the supported glasses
+pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
+    if let Ok(glasses) = RokidAir::new() {
+        return Ok(Box::new(glasses));
+    };
+    if let Ok(glasses) = MadGazeGlow::new() {
+        return Ok(Box::new(glasses));
+    };
+    Err(Error::NotFound)
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::IoError(e)
     }
 }
 
 impl From<rusb::Error> for Error {
     fn from(e: rusb::Error) -> Self {
         Error::UsbError(e)
+    }
+}
+
+impl From<serialport::Error> for Error {
+    fn from(e: serialport::Error) -> Self {
+        Error::SerialPortError(e)
     }
 }
 
