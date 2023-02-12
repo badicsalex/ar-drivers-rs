@@ -7,5 +7,9 @@ use ar_drivers::{any_glasses, DisplayMode};
 fn main() {
     let mut glasses = any_glasses().unwrap();
     println!("Got glasses, serial={}", glasses.serial().unwrap());
+    println!(
+        "Display mode was: {:?}",
+        glasses.get_display_mode().unwrap()
+    );
     glasses.set_display_mode(DisplayMode::Stereo).unwrap();
 }

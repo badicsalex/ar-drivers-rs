@@ -85,6 +85,7 @@ pub struct MiscSensors {
 }
 
 /// Display mode used by [`Glasses::set_display_mode`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
     /// Picture should be same for both eyes (simple full HD mode)
     SameOnBoth = 0,
@@ -99,6 +100,8 @@ pub trait ARGlasses {
     fn serial(&mut self) -> Result<String>;
     /// Get a single sensor event. Blocks.
     fn read_event(&mut self) -> Result<GlassesEvent>;
+    /// Get the display mode of the glasses. See [`DisplayMode`]
+    fn get_display_mode(&mut self) -> Result<DisplayMode>;
     /// Set the display mode of the glasses. See [`DisplayMode`]
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()>;
 }

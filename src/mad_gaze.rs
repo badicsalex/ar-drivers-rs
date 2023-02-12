@@ -71,6 +71,15 @@ impl ARGlasses for MadGazeGlow {
         }
     }
 
+    fn get_display_mode(&mut self) -> Result<DisplayMode> {
+        let result = self.serial.do_command(b"G3D", &[])?;
+        if result == [0] {
+            Ok(DisplayMode::SameOnBoth)
+        } else {
+            Ok(DisplayMode::Stereo)
+        }
+    }
+
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
         let result = self.serial.do_command(b"S3D", &[display_mode as u8])?;
         if result == [0] {

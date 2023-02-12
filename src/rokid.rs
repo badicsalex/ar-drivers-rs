@@ -74,6 +74,27 @@ impl ARGlasses for RokidAir {
         }
     }
 
+    fn get_display_mode(&mut self) -> Result<DisplayMode> {
+        let mut result = [0; 0x40];
+        self.device_handle.read_control(
+            request_type(
+                rusb::Direction::In,
+                rusb::RequestType::Vendor,
+                rusb::Recipient::Device,
+            ),
+            0x81,
+            0x0,
+            0x1,
+            &mut result,
+            TIMEOUT,
+        )?;
+        if result[1] == 0 {
+            Ok(DisplayMode::SameOnBoth)
+        } else {
+            Ok(DisplayMode::Stereo)
+        }
+    }
+
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
         self.device_handle.write_control(
             request_type(
