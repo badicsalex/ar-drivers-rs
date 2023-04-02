@@ -111,6 +111,9 @@ impl NrealLight {
             pending_packets: Default::default(),
             last_heartbeat: std::time::Instant::now(),
         };
+        // For some reason, the below command does not work if this
+        // is not here.
+        result.serial()?;
         // Send a "Yes, I am a working SDK" command
         // This is needed for SBS 3D display to work.
         result.run_command(Packet {
