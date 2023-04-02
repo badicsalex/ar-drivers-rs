@@ -4,6 +4,11 @@
 
 //! Nreal Light AR glasses support. See [`NrealLight`]
 //! It only uses [`rusb`] for communication.
+//!
+//! **Important note**: The NReal Light requires constant heartbeats in 3D SBS mode,
+//! or else it switches the screen off. This heartbeat is sent periodically when
+//! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
+//! every half a second or so)
 
 use std::{collections::VecDeque, io::Write, time::Duration};
 
@@ -15,6 +20,7 @@ use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result};
 pub struct NrealLight {
     device_handle: DeviceHandle<GlobalContext>,
     pending_packets: VecDeque<Packet>,
+    last_heartbeat: std::time::Instant,
 }
 
 const TIMEOUT: Duration = Duration::from_millis(250);
@@ -30,13 +36,27 @@ impl ARGlasses for NrealLight {
     }
 
     fn read_event(&mut self) -> Result<GlassesEvent> {
-        let _packet = if let Some(packet) = self.pending_packets.pop_front() {
-            packet
-        } else {
-            self.read_packet()?
-        };
-        // TODO
-        Err(Error::Other("Not implemented"))
+        loop {
+            let now = std::time::Instant::now();
+            if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
+                // Heartbeat packet
+                self.run_command(Packet {
+                    category: b'@',
+                    cmd_id: b'K',
+                    ..Default::default()
+                })?;
+            }
+            let _packet = if let Some(packet) = self.pending_packets.pop_front() {
+                packet
+            } else {
+                match self.read_packet() {
+                    Ok(packet) => packet,
+                    Err(Error::UsbError(rusb::Error::Timeout)) => continue,
+                    Err(e) => return Err(e),
+                }
+            };
+            // TODO: parse packet and actually return it
+        }
     }
 
     fn get_display_mode(&mut self) -> Result<DisplayMode> {
@@ -86,10 +106,18 @@ impl NrealLight {
         let mut device_handle = device.open()?;
         device_handle.set_auto_detach_kernel_driver(true)?;
         device_handle.claim_interface(0)?;
-        let result = Self {
+        let mut result = Self {
             device_handle,
             pending_packets: Default::default(),
+            last_heartbeat: std::time::Instant::now(),
         };
+        // Send a "Yes, I am a working SDK" command
+        // This is needed for SBS 3D display to work.
+        result.run_command(Packet {
+            category: b'@',
+            cmd_id: b'3',
+            data: vec![b'1'],
+        })?;
         Ok(result)
     }
 

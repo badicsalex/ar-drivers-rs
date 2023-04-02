@@ -16,3 +16,6 @@ license = "MIT"
 byteorder = "1.4"
 rusb = "0.9.1"
 serialport = "4.2"
+
+[dev-dependencies]
+clap = { version = "4.2", features = ["derive"] }
