@@ -24,10 +24,12 @@
 //! Madgwicks algorithm or a proper EKF. One good choice is the `eskf` crate.
 
 use mad_gaze::MadGazeGlow;
+use nreal::NrealLight;
 use rokid::RokidAir;
 
 pub mod mad_gaze;
 pub mod rokid;
+pub mod nreal;
 
 /// Possible errors resulting from `ar-drivers` API calls
 #[derive(Debug)]
@@ -109,6 +111,9 @@ pub trait ARGlasses {
 /// Convenience function to detect and connect to any of the supported glasses
 pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
     if let Ok(glasses) = RokidAir::new() {
+        return Ok(Box::new(glasses));
+    };
+    if let Ok(glasses) = NrealLight::new() {
         return Ok(Box::new(glasses));
     };
     if let Ok(glasses) = MadGazeGlow::new() {
