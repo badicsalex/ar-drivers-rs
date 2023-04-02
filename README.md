@@ -25,8 +25,10 @@ Licensed under the MIT license
 
 ## Legal stuff
 
-The protocol was obtained by reverse engineering proprietary drivers.
-This is explicitly allowed in the EU for interworking purposes, it's probably
-fair use everywhere else, but you should check your own country's laws.
+Some parts of the protocol was obtained with reverse engineering.
+
+Reverse engineering explicitly allowed in the EU for interworking purposes,
+it's probably fair use everywhere else, but you should check your own
+country's laws.
 
 The project is not affiliated with Rokid, Mad Gaze or any other related entities. 
