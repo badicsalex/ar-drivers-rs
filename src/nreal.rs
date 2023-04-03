@@ -136,15 +136,16 @@ impl NrealLight {
     }
 
     fn read_packet(&mut self) -> Result<Packet> {
-        loop {
+        for _ in 0..8 {
             let mut result = [0u8; 0x40];
             self.device_handle
                 .read_interrupt(0x81, &mut result, TIMEOUT)?;
-            // TODO: If we get a stream of junk, we will never time out
             if let Some(packet) = Packet::deserialize(&result) {
                 return Ok(packet);
             }
         }
+
+        Err(Error::Other("Received too many junk packets"))
     }
 
     fn run_command(&mut self, command: Packet) -> Result<Vec<u8>> {
@@ -157,13 +158,14 @@ impl NrealLight {
         )?;
 
         for _ in 0..64 {
-            let recved = self.read_packet()?;
-            if recved.category == command.category + 1 && recved.cmd_id == command.cmd_id {
-                return Ok(recved.data);
+            let packet = self.read_packet()?;
+            if packet.category == command.category + 1 && packet.cmd_id == command.cmd_id {
+                return Ok(packet.data);
             }
+            self.pending_packets.push_back(packet);
         }
 
-        Err(Error::Other("Received too many junk packets"))
+        Err(Error::Other("Received too many unrelated packets"))
     }
 }
 
