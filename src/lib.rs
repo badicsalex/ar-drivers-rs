@@ -28,8 +28,8 @@ use nreal::NrealLight;
 use rokid::RokidAir;
 
 pub mod mad_gaze;
-pub mod rokid;
 pub mod nreal;
+pub mod rokid;
 
 /// Possible errors resulting from `ar-drivers` API calls
 #[derive(Debug)]
