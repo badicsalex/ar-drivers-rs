@@ -15,13 +15,14 @@ license = "MIT"
 [features]
 default = ["mad_gaze", "rokid", "nreal"]
 rokid = ["rusb"]
-nreal = ["rusb"]
+nreal = ["rusb", "tinyjson"]
 mad_gaze = ["serialport"]
 
 [dependencies]
 byteorder = "1.4"
 rusb = { version = "0.9.1", optional = true }
 serialport = { version = "4.2", optional = true }
+tinyjson = { version = "2.5.1", optional = true }
 
 [dev-dependencies]
 clap = { version = "4.2", features = ["derive"] }

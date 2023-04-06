@@ -17,7 +17,9 @@ use std::{
     time::Duration,
 };
 
-use rusb::{DeviceHandle, GlobalContext};
+use byteorder::{LittleEndian, ReadBytesExt};
+use rusb::{request_type, DeviceHandle, GlobalContext};
+use tinyjson::JsonValue;
 
 use crate::{
     util::open_device_vid_pid_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result,
@@ -29,9 +31,11 @@ pub struct NrealLight {
     device_handle: DeviceHandle<GlobalContext>,
     pending_packets: VecDeque<Packet>,
     last_heartbeat: std::time::Instant,
+    last_acc_gyro: Arc<Mutex<Option<(SensorData3D, SensorData3D)>>>,
 }
 
-const TIMEOUT: Duration = Duration::from_millis(250);
+const COMMAND_TIMEOUT: Duration = Duration::from_millis(250);
+const OV_580_TIMEOUT: Duration = Duration::from_millis(250);
 
 impl ARGlasses for NrealLight {
     fn serial(&mut self) -> Result<String> {
@@ -44,6 +48,15 @@ impl ARGlasses for NrealLight {
     }
 
     fn read_event(&mut self) -> Result<GlassesEvent> {
+        // XXX: What we do here is super shaky.
+        //      First of all, we rely on read_event being continously called to send the heartbeat
+        //      Second, if read_event is not called often enough, the IMU stream will totally starve
+        //      all other event.
+        //      But having it in this order is necessary since if there are no events, there is a
+        //      guaranteed 1ms delay on the read_packet call.
+        //
+        //      Ideally these should be 3 separate threads, and a mpsc queue.
+        //      And read_event shouldn't even block.
         loop {
             let now = std::time::Instant::now();
             if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
@@ -54,10 +67,20 @@ impl ARGlasses for NrealLight {
                     ..Default::default()
                 })?;
             }
+            if let Some((accelerometer, gyroscope)) = self.last_acc_gyro.lock().unwrap().take() {
+                return Ok(GlassesEvent::AccGyro {
+                    accelerometer,
+                    gyroscope,
+                });
+            }
+            if Arc::strong_count(&self.last_acc_gyro) != 2 {
+                return Err(Error::Disconnected("Nreal Light OV580"));
+            }
+
             let _packet = if let Some(packet) = self.pending_packets.pop_front() {
                 packet
             } else {
-                match self.read_packet() {
+                match self.read_packet(std::time::Duration::from_millis(1)) {
                     Ok(packet) => packet,
                     Err(Error::UsbError(rusb::Error::Timeout)) => continue,
                     Err(e) => return Err(e),
@@ -114,6 +137,7 @@ impl NrealLight {
             device_handle: open_device_vid_pid_endpoint(0x0486, 0x573c, 0x81)?,
             pending_packets: Default::default(),
             last_heartbeat: std::time::Instant::now(),
+            last_acc_gyro: Default::default(),
         };
         // For some reason, the below command does not work if this
         // is not here.
@@ -131,14 +155,15 @@ impl NrealLight {
             cmd_id: b'N',
             data: vec![b'1'],
         })?;
+        Ov580::new()?.start_receiving_thread(result.last_acc_gyro.clone());
         Ok(result)
     }
 
-    fn read_packet(&mut self) -> Result<Packet> {
+    fn read_packet(&mut self, timeout: std::time::Duration) -> Result<Packet> {
         for _ in 0..8 {
             let mut result = [0u8; 0x40];
             self.device_handle
-                .read_interrupt(0x81, &mut result, TIMEOUT)?;
+                .read_interrupt(0x81, &mut result, timeout)?;
             if let Some(packet) = Packet::deserialize(&result) {
                 return Ok(packet);
             }
@@ -153,11 +178,11 @@ impl NrealLight {
             &command
                 .serialize()
                 .ok_or(Error::Other("Packet serialization failed"))?,
-            TIMEOUT,
+            COMMAND_TIMEOUT,
         )?;
 
         for _ in 0..64 {
-            let packet = self.read_packet()?;
+            let packet = self.read_packet(COMMAND_TIMEOUT)?;
             if packet.category == command.category + 1 && packet.cmd_id == command.cmd_id {
                 return Ok(packet.data);
             }
@@ -165,6 +190,157 @@ impl NrealLight {
         }
 
         Err(Error::Other("Received too many unrelated packets"))
+    }
+}
+
+struct Ov580 {
+    device_handle: DeviceHandle<GlobalContext>,
+    accel_bias_x: f32,
+    accel_bias_y: f32,
+    accel_bias_z: f32,
+    gyro_bias_x: f32,
+    gyro_bias_y: f32,
+    gyro_bias_z: f32,
+}
+
+impl Ov580 {
+    pub fn new() -> Result<Self> {
+        let mut result = Self {
+            device_handle: open_device_vid_pid_endpoint(0x05a9, 0x0680, 0x89)?,
+            accel_bias_x: 0.0,
+            accel_bias_y: 0.0,
+            accel_bias_z: 0.0,
+            gyro_bias_x: 0.0,
+            gyro_bias_y: 0.0,
+            gyro_bias_z: 0.0,
+        };
+        // Turn off IMU stream while reading config
+        result.command(0x19, 0x0)?;
+        result.read_config()?;
+        result.command(0x19, 0x1)?;
+
+        Ok(result)
+    }
+
+    fn read_config(&mut self) -> Result<()> {
+        // Start reading config
+        self.command(0x14, 0x0)?;
+        let mut config = Vec::new();
+        loop {
+            let config_part = self.command(0x15, 0x0)?;
+            if config_part[0] != 2 || config_part[1] != 1 {
+                break;
+            }
+            config.extend_from_slice(&config_part[3..(3 + config_part[2] as usize)]);
+        }
+        for i in 0x28..config.len() - 4 {
+            if config[i..i + 3] == [b'\n', b'\n', b'{'] {
+                let config_as_str = String::from_utf8(config[i + 2..].into())
+                    .map_err(|_| Error::Other("Invalid glasses config format (no start token)"))?;
+                let config: JsonValue = config_as_str
+                    .split_once("\n\n")
+                    .ok_or(Error::Other("Invalid glasses config format (no end token)"))?
+                    .0
+                    .parse()
+                    .map_err(|_| {
+                        Error::Other("Invalid glasses config format (JSON parse error)")
+                    })?;
+                // XXX: this may panic but at this point it's super unlikely.
+                let accel_bias = &config["IMU"]["device_1"]["accel_bias"];
+                self.accel_bias_x = f64::try_from(accel_bias[0].clone()).unwrap() as f32;
+                self.accel_bias_y = f64::try_from(accel_bias[1].clone()).unwrap() as f32;
+                self.accel_bias_z = f64::try_from(accel_bias[2].clone()).unwrap() as f32;
+                let gyro_bias = &config["IMU"]["device_1"]["gyro_bias"];
+                self.gyro_bias_x = f64::try_from(gyro_bias[0].clone()).unwrap() as f32;
+                self.gyro_bias_y = f64::try_from(gyro_bias[1].clone()).unwrap() as f32;
+                self.gyro_bias_z = f64::try_from(gyro_bias[2].clone()).unwrap() as f32;
+            }
+        }
+        Ok(())
+    }
+
+    fn command(&self, cmd: u8, subcmd: u8) -> Result<Vec<u8>> {
+        self.device_handle.write_control(
+            request_type(
+                rusb::Direction::Out,
+                rusb::RequestType::Class,
+                rusb::Recipient::Interface,
+            ),
+            0x09,   // HID Set_Report
+            0x0202, // Hid output + first byte of buffer
+            0x2,    // Interface number 2. XXX: Let's hope it is always this :/
+            &[2, cmd, subcmd, 0, 0, 0, 0],
+            OV_580_TIMEOUT,
+        )?;
+        for _ in 0..64 {
+            let mut result = [0u8; 0x80];
+            self.device_handle
+                .read_interrupt(0x89, &mut result, OV_580_TIMEOUT)?;
+            if result[0] == 2 {
+                return Ok(result.into());
+            }
+        }
+        Err(Error::Other("Couldn't get acknowledgement to command"))
+    }
+
+    pub fn start_receiving_thread(
+        mut self,
+        sensor_data: Arc<Mutex<Option<(SensorData3D, SensorData3D)>>>,
+    ) {
+        // XXX: This is horribly inefficient.
+        //      Libusb is async by default, and the sync functions are just wrappers around
+        //      transfer submission. And now we make it async again, and then make it
+        //      sync again on read_event.
+        //      All this, because we don't want to store infinite event streams, should
+        //      something slow down on the caller side.
+        assert_eq!(Arc::strong_count(&sensor_data), 2);
+        std::thread::spawn(move || {
+            while Arc::strong_count(&sensor_data) == 2 {
+                match self.receive_one_report() {
+                    Err(_) => return, // TODO: maybe log?
+                    Ok(Some(data)) => *sensor_data.lock().unwrap() = Some(data),
+                    Ok(None) => {}
+                }
+            }
+        });
+    }
+
+    fn receive_one_report(&mut self) -> Result<Option<(SensorData3D, SensorData3D)>> {
+        let mut result = [0u8; 0x80];
+        self.device_handle
+            .read_interrupt(0x89, &mut result, OV_580_TIMEOUT)?;
+        if result[0] != 1 {
+            return Ok(None);
+        };
+        // TODO: This skips over a 2 byte temperature field that may be useful.
+        let mut reader = std::io::Cursor::new(&result[44..]);
+
+        let gyro_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
+        let gyro_mul = reader.read_u32::<LittleEndian>()? as f32;
+        let gyro_div = reader.read_u32::<LittleEndian>()? as f32;
+        let gyro_x = reader.read_i32::<LittleEndian>()? as f32;
+        let gyro_y = reader.read_i32::<LittleEndian>()? as f32;
+        let gyro_z = reader.read_i32::<LittleEndian>()? as f32;
+        let gyro = SensorData3D {
+            timestamp: gyro_timestamp,
+            x: (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias_x,
+            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias_y,
+            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias_z,
+        };
+
+        let acc_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
+        let acc_mul = reader.read_u32::<LittleEndian>()? as f32;
+        let acc_div = reader.read_u32::<LittleEndian>()? as f32;
+        let acc_x = reader.read_i32::<LittleEndian>()? as f32;
+        let acc_y = reader.read_i32::<LittleEndian>()? as f32;
+        let acc_z = reader.read_i32::<LittleEndian>()? as f32;
+        let acc = SensorData3D {
+            timestamp: acc_timestamp,
+            x: (acc_x * acc_mul / acc_div) * 9.81 - self.accel_bias_x,
+            y: -(acc_y * acc_mul / acc_div) * 9.81 + self.accel_bias_y,
+            z: -(acc_z * acc_mul / acc_div) * 9.81 + self.accel_bias_z,
+        };
+        Ok(Some((acc, gyro)))
     }
 }
 
