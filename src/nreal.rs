@@ -61,11 +61,20 @@ impl ARGlasses for NrealLight {
             let now = std::time::Instant::now();
             if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
                 // Heartbeat packet
-                self.run_command(Packet {
-                    category: b'@',
-                    cmd_id: b'K',
-                    ..Default::default()
-                })?;
+                // Not sent as "run_command" as sometimes the Glasses don't bother to
+                // answer. E.g. when one of the buttons is pressed while it is running.
+                self.device_handle.write_interrupt(
+                    0x1,
+                    &Packet {
+                        category: b'@',
+                        cmd_id: b'K',
+                        ..Default::default()
+                    }
+                    .serialize()
+                    .ok_or(Error::Other("Packet serialization failed"))?,
+                    COMMAND_TIMEOUT,
+                )?;
+                self.last_heartbeat = now;
             }
             if let Some((accelerometer, gyroscope)) = self.last_acc_gyro.lock().unwrap().take() {
                 return Ok(GlassesEvent::AccGyro {
@@ -77,7 +86,7 @@ impl ARGlasses for NrealLight {
                 return Err(Error::Disconnected("Nreal Light OV580"));
             }
 
-            let _packet = if let Some(packet) = self.pending_packets.pop_front() {
+            let packet = if let Some(packet) = self.pending_packets.pop_front() {
                 packet
             } else {
                 match self.read_packet(std::time::Duration::from_millis(1)) {
@@ -86,7 +95,55 @@ impl ARGlasses for NrealLight {
                     Err(e) => return Err(e),
                 }
             };
-            // TODO: parse packet and actually return it
+            match packet {
+                Packet {
+                    category: b'5',
+                    cmd_id: b'K',
+                    data,
+                } if data == b"UP" => return Ok(GlassesEvent::KeyPress(0)),
+                Packet {
+                    category: b'5',
+                    cmd_id: b'K',
+                    data,
+                } if data == b"DN" => return Ok(GlassesEvent::KeyPress(1)),
+                Packet {
+                    category: b'5',
+                    cmd_id: b'P',
+                    data,
+                } if data == b"near" => return Ok(GlassesEvent::ProximityNear),
+                Packet {
+                    category: b'5',
+                    cmd_id: b'P',
+                    data,
+                } if data == b"away" => return Ok(GlassesEvent::ProximityFar),
+                Packet {
+                    category: b'5',
+                    cmd_id: b'L',
+                    data,
+                } => {
+                    return Ok(GlassesEvent::AmbientLight(
+                        u16::from_str_radix(
+                            &String::from_utf8(data)
+                                .map_err(|_| Error::Other("Invalid utf-8 in ambient light msg"))?,
+                            16,
+                        )
+                        .map_err(|_| Error::Other("Invalid number in ambient light msg"))?,
+                    ))
+                }
+                // NOTE: this is not enabled currently
+                Packet {
+                    category: b'5',
+                    cmd_id: b'S',
+                    ..
+                } => return Ok(GlassesEvent::VSync),
+
+                _ => {
+                    if packet.category != 65 {
+                        // TODO: parse packet and actually return it
+                        eprintln!("Got packet: {packet:?}");
+                    }
+                }
+            }
         }
     }
 
@@ -139,9 +196,14 @@ impl NrealLight {
             last_heartbeat: std::time::Instant::now(),
             last_acc_gyro: Default::default(),
         };
-        // For some reason, the below command does not work if this
-        // is not here.
-        result.serial()?;
+        // Disable the VSync event. Right now all it does is mask every other message sometimes.
+        // XXX: In fact, since we are a bit slow on resubmitting the transfers, we miss a lot of
+        //      messages. The threading model should be fixed.
+        result.run_command(Packet {
+            category: b'1',
+            cmd_id: b'N',
+            data: vec![b'0'],
+        })?;
         // Send a "Yes, I am a working SDK" command
         // This is needed for SBS 3D display to work.
         result.run_command(Packet {
@@ -149,10 +211,10 @@ impl NrealLight {
             cmd_id: b'3',
             data: vec![b'1'],
         })?;
-        // Enable the VSync event
+        // Enable the Ambient Light event
         result.run_command(Packet {
             category: b'1',
-            cmd_id: b'N',
+            cmd_id: b'L',
             data: vec![b'1'],
         })?;
         Ov580::new()?.start_receiving_thread(result.last_acc_gyro.clone());

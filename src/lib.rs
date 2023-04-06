@@ -85,6 +85,10 @@ pub enum GlassesEvent {
     /// Proximity sensor senses the user, i.e. the glasses were taken off.
     /// Sent once per event.
     ProximityFar,
+    /// Ambient light level. Unit is vendor-specific
+    AmbientLight(u16),
+    /// V-sync happened on the device
+    VSync,
 }
 
 /// Structure to hold a typical 3D sensor value (accelerometer, gyroscope, magnetomer)
