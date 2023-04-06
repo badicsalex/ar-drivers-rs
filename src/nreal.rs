@@ -10,11 +10,19 @@
 //! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
 //! every half a second or so)
 
-use std::{collections::VecDeque, io::Write, time::Duration};
+use std::{
+    collections::VecDeque,
+    io::Write,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use rusb::{Device, DeviceHandle, DeviceList, GlobalContext};
+use rusb::{DeviceHandle, GlobalContext};
 
-use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result};
+use crate::{
+    util::open_device_vid_pid_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result,
+    SensorData3D,
+};
 
 /// The main structure representing a connected Nreal Light glasses
 pub struct NrealLight {
@@ -102,12 +110,8 @@ impl NrealLight {
     /// Find a connected Nreal Light device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     pub fn new() -> Result<Self> {
-        let device = Self::get_rusb_device()?;
-        let mut device_handle = device.open()?;
-        device_handle.set_auto_detach_kernel_driver(true)?;
-        device_handle.claim_interface(0)?;
         let mut result = Self {
-            device_handle,
+            device_handle: open_device_vid_pid_endpoint(0x0486, 0x573c, 0x81)?,
             pending_packets: Default::default(),
             last_heartbeat: std::time::Instant::now(),
         };
@@ -128,17 +132,6 @@ impl NrealLight {
             data: vec![b'1'],
         })?;
         Ok(result)
-    }
-
-    fn get_rusb_device() -> Result<Device<GlobalContext>> {
-        for device in DeviceList::new()?.iter() {
-            if let Ok(desc) = device.device_descriptor() {
-                if desc.vendor_id() == 0x0486 && desc.product_id() == 0x573c {
-                    return Ok(device);
-                }
-            }
-        }
-        Err(Error::NotFound)
     }
 
     fn read_packet(&mut self) -> Result<Packet> {

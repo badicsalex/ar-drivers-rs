@@ -36,6 +36,7 @@ pub mod mad_gaze;
 pub mod nreal;
 #[cfg(feature = "rokid")]
 pub mod rokid;
+mod util;
 
 /// Possible errors resulting from `ar-drivers` API calls
 #[derive(Debug)]

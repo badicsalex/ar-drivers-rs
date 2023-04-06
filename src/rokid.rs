@@ -8,9 +8,11 @@
 use std::{io::Cursor, time::Duration};
 
 use byteorder::{ReadBytesExt, LE};
-use rusb::{request_type, Device, DeviceHandle, DeviceList, GlobalContext};
+use rusb::{request_type, DeviceHandle, GlobalContext};
 
-use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D};
+use crate::{
+    util::open_device_vid_pid_endpoint, ARGlasses, DisplayMode, GlassesEvent, Result, SensorData3D,
+};
 
 /// The main structure representing a connected Rokid Air glasses
 pub struct RokidAir {
@@ -147,45 +149,13 @@ impl RokidAir {
     /// Find a connected Rokid Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     pub fn new() -> Result<Self> {
-        let device = Self::get_rusb_device()?;
-        let interface_num = Self::get_interrupt_interface(&device)?;
-        let mut device_handle = device.open()?;
-        device_handle.set_auto_detach_kernel_driver(true)?;
-        device_handle.claim_interface(interface_num)?;
         let result = Self {
-            device_handle,
+            device_handle: open_device_vid_pid_endpoint(0x04d2, 0x162f, INTERRUPT_IN_ENDPOINT)?,
             last_accelerometer: None,
             last_gyroscope: None,
             key_was_pressed: false,
             proxy_sensor_was_far: false,
         };
         Ok(result)
-    }
-
-    fn get_rusb_device() -> Result<Device<GlobalContext>> {
-        for device in DeviceList::new()?.iter() {
-            if let Ok(desc) = device.device_descriptor() {
-                if desc.vendor_id() == 0x04d2 && desc.product_id() == 0x162f {
-                    return Ok(device);
-                }
-            }
-        }
-        Err(Error::NotFound)
-    }
-
-    fn get_interrupt_interface(device: &Device<GlobalContext>) -> Result<u8> {
-        let config_desc = device.config_descriptor(0)?;
-        for interface in config_desc.interfaces() {
-            for desc in interface.descriptors() {
-                for endpoint in desc.endpoint_descriptors() {
-                    if endpoint.address() == INTERRUPT_IN_ENDPOINT {
-                        return Ok(interface.number());
-                    }
-                }
-            }
-        }
-        Err(Error::Other(
-            "Could not find endpoint, wrong USB structure (probably)",
-        ))
     }
 }
