@@ -60,15 +60,28 @@ type Result<T> = std::result::Result<T, Error>;
 /// AR glasses sensor event, got from [`Glasses::read_event`]
 #[derive(Debug, Clone)]
 pub enum GlassesEvent {
-    /// Accelerometer data in m^2/s
-    Accelerometer(SensorData3D),
-    /// Gyroscope data. Right handed rotation in rad/sec,
-    /// e.g. turning left is positive y axis.
-    Gyroscope(SensorData3D),
+    /// Synchronized accelerometer and gyroscope data.
+    /// The timestamps are guaranteed to be the same.
+    AccGyro {
+        /// Accelerometer data in m^2/s
+        accelerometer: SensorData3D,
+        /// Gyroscope data. Right handed rotation in rad/sec,
+        /// e.g. turning left is positive y axis.
+        gyroscope: SensorData3D,
+    },
     /// Magnetometer data. Vector points to magnetic north (mostly)
     Magnetometer(SensorData3D),
-    /// Other sensor data
-    Misc(MiscSensors),
+    /// A key was pressed (sent once per press)
+    /// The number is a key ID, starting from 0.
+    KeyPress(u8),
+
+    /// Proximity sensor senses the user, i.e. the glasses were put on
+    /// Sent once per event.
+    ProximityNear,
+
+    /// Proximity sensor senses the user, i.e. the glasses were taken off.
+    /// Sent once per event.
+    ProximityFar,
 }
 
 /// Structure to hold a typical 3D sensor value (accelerometer, gyroscope, magnetomer)
@@ -82,16 +95,6 @@ pub struct SensorData3D {
     pub y: f32,
     /// Sensor value in the Z coordinate. Positive is Backwards.
     pub z: f32,
-}
-
-/// Container for other sensor data
-#[derive(Debug, Clone)]
-pub struct MiscSensors {
-    /// Keys pressed. On the Rokid Air, the only button is the brightness button,
-    /// And it corresponds to the value `4`
-    pub keys: u8,
-    /// Proximity sensor report. `true` if the user is currently wearing the glasses
-    pub proximity: bool,
 }
 
 /// Display mode used by [`Glasses::set_display_mode`]

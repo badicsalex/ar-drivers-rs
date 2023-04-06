@@ -223,20 +223,20 @@ impl MadGazeGlow {
             if gyro_axis1 == -32768 {
                 break;
             }
-            self.pending_events
-                .push_back(GlassesEvent::Gyroscope(SensorData3D {
+            self.pending_events.push_back(GlassesEvent::AccGyro {
+                accelerometer: SensorData3D {
                     timestamp: self.timestamp,
                     x: gyro_axis2 as f32 * GYRO_UNIT,
                     y: -gyro_axis3 as f32 * GYRO_UNIT,
                     z: -gyro_axis1 as f32 * GYRO_UNIT,
-                }));
-            self.pending_events
-                .push_back(GlassesEvent::Accelerometer(SensorData3D {
+                },
+                gyroscope: SensorData3D {
                     timestamp: self.timestamp,
                     x: acc_axis2 as f32 * ACC_UNIT,
                     y: -acc_axis3 as f32 * ACC_UNIT,
                     z: -acc_axis1 as f32 * ACC_UNIT,
-                }));
+                },
+            });
             // TODO: This is a big hack and should be read from the IMU
             // Then again, the IMU should fill its FIFO with this period,
             // and we are already running out of I2C or serial bandwidth

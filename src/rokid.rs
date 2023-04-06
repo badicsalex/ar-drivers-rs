@@ -10,11 +10,15 @@ use std::{io::Cursor, time::Duration};
 use byteorder::{ReadBytesExt, LE};
 use rusb::{request_type, Device, DeviceHandle, DeviceList, GlobalContext};
 
-use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, MiscSensors, Result, SensorData3D};
+use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D};
 
 /// The main structure representing a connected Rokid Air glasses
 pub struct RokidAir {
     device_handle: DeviceHandle<GlobalContext>,
+    last_accelerometer: Option<SensorData3D>,
+    last_gyroscope: Option<SensorData3D>,
+    key_was_pressed: bool,
+    proxy_sensor_was_far: bool,
 }
 
 /* This is actually hardcoded in the SDK too, except for PID==0x162d, where it's 0x83 */
@@ -49,10 +53,25 @@ impl ARGlasses for RokidAir {
             self.device_handle
                 .read_interrupt(INTERRUPT_IN_ENDPOINT, &mut result, TIMEOUT)?;
             if result[0] == 2 {
-                return Ok(GlassesEvent::Misc(MiscSensors {
-                    keys: result[47],
-                    proximity: result[51] == 0,
-                }));
+                //eprintln!("{result:?}");
+                let key_is_pressed = result[47] != 0;
+                let send_key_event = key_is_pressed && !self.key_was_pressed;
+                self.key_was_pressed = key_is_pressed;
+                if send_key_event {
+                    // We will lose the Proxy sensor "event" here,
+                    // but we will get it in the next iteration soon.
+                    return Ok(GlassesEvent::KeyPress(0));
+                }
+                let proxy_sensor_is_far = result[51] != 0;
+                let send_proxy_event = proxy_sensor_is_far != self.proxy_sensor_was_far;
+                self.proxy_sensor_was_far = proxy_sensor_is_far;
+                if send_proxy_event {
+                    return Ok(if proxy_sensor_is_far {
+                        GlassesEvent::ProximityFar
+                    } else {
+                        GlassesEvent::ProximityNear
+                    });
+                }
             }
             if result[0] == 4 {
                 let mut cursor = Cursor::new(&result);
@@ -64,11 +83,23 @@ impl ARGlasses for RokidAir {
                 let z = cursor.read_f32::<LE>().unwrap();
                 let sensor_data = SensorData3D { timestamp, x, y, z };
                 match result[1] {
-                    1 => return Ok(GlassesEvent::Accelerometer(sensor_data)),
-                    2 => return Ok(GlassesEvent::Gyroscope(sensor_data)),
+                    1 => self.last_accelerometer = Some(sensor_data),
+                    2 => self.last_gyroscope = Some(sensor_data),
                     // TODO: Magnetometer apparently gives an accuracy value too
                     3 => return Ok(GlassesEvent::Magnetometer(sensor_data)),
                     _ => (),
+                }
+                if let (Some(accelerometer), Some(gyroscope)) =
+                    (self.last_accelerometer.clone(), self.last_gyroscope.clone())
+                {
+                    if accelerometer.timestamp == gyroscope.timestamp {
+                        self.last_gyroscope = None;
+                        self.last_accelerometer = None;
+                        return Ok(GlassesEvent::AccGyro {
+                            accelerometer,
+                            gyroscope,
+                        });
+                    }
                 }
             }
         }
@@ -121,7 +152,13 @@ impl RokidAir {
         let mut device_handle = device.open()?;
         device_handle.set_auto_detach_kernel_driver(true)?;
         device_handle.claim_interface(interface_num)?;
-        let result = Self { device_handle };
+        let result = Self {
+            device_handle,
+            last_accelerometer: None,
+            last_gyroscope: None,
+            key_was_pressed: false,
+            proxy_sensor_was_far: false,
+        };
         Ok(result)
     }
 
