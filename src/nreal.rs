@@ -121,6 +121,12 @@ impl NrealLight {
             cmd_id: b'3',
             data: vec![b'1'],
         })?;
+        // Enable the VSync event
+        result.run_command(Packet {
+            category: b'1',
+            cmd_id: b'N',
+            data: vec![b'1'],
+        })?;
         Ok(result)
     }
 

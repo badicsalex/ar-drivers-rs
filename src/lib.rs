@@ -23,12 +23,18 @@
 //! out of the hardware. To get quaternions, you should probably use a lib that implements
 //! Madgwicks algorithm or a proper EKF. One good choice is the `eskf` crate.
 
+#[cfg(feature = "mad_gaze")]
 use mad_gaze::MadGazeGlow;
+#[cfg(feature = "nreal")]
 use nreal::NrealLight;
+#[cfg(feature = "rokid")]
 use rokid::RokidAir;
 
+#[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
+#[cfg(feature = "nreal")]
 pub mod nreal;
+#[cfg(feature = "rokid")]
 pub mod rokid;
 
 /// Possible errors resulting from `ar-drivers` API calls
@@ -37,8 +43,10 @@ pub enum Error {
     /// A standard IO error happened. See [`std::io::Error`] for specifics
     IoError(std::io::Error),
     /// An rusb error happened. See [`rusb::Error`] for specifics
+    #[cfg(feature = "rusb")]
     UsbError(rusb::Error),
     /// A serialport error happened. See [`serialport::Error`] for specifics
+    #[cfg(feature = "serialport")]
     SerialPortError(serialport::Error),
     /// No glasses were found.
     NotFound,
@@ -110,12 +118,15 @@ pub trait ARGlasses {
 
 /// Convenience function to detect and connect to any of the supported glasses
 pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
+    #[cfg(feature = "rokid")]
     if let Ok(glasses) = RokidAir::new() {
         return Ok(Box::new(glasses));
     };
+    #[cfg(feature = "nreal")]
     if let Ok(glasses) = NrealLight::new() {
         return Ok(Box::new(glasses));
     };
+    #[cfg(feature = "mad_gaze")]
     if let Ok(glasses) = MadGazeGlow::new() {
         return Ok(Box::new(glasses));
     };
@@ -128,12 +139,14 @@ impl From<std::io::Error> for Error {
     }
 }
 
+#[cfg(feature = "rusb")]
 impl From<rusb::Error> for Error {
     fn from(e: rusb::Error) -> Self {
         Error::UsbError(e)
     }
 }
 
+#[cfg(feature = "serialport")]
 impl From<serialport::Error> for Error {
     fn from(e: serialport::Error) -> Self {
         Error::SerialPortError(e)

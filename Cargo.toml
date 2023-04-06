@@ -12,10 +12,16 @@ categories = ["hardware-support"]
 license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["mad_gaze", "rokid", "nreal"]
+rokid = ["rusb"]
+nreal = ["rusb"]
+mad_gaze = ["serialport"]
+
 [dependencies]
 byteorder = "1.4"
-rusb = "0.9.1"
-serialport = "4.2"
+rusb = { version = "0.9.1", optional = true }
+serialport = { version = "4.2", optional = true }
 
 [dev-dependencies]
 clap = { version = "4.2", features = ["derive"] }
