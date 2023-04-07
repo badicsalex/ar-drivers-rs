@@ -10,32 +10,24 @@
 //! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
 //! every half a second or so)
 
-use std::{
-    collections::VecDeque,
-    io::Write,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::VecDeque, io::Write};
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use rusb::{request_type, DeviceHandle, GlobalContext};
+use hidapi::{HidApi, HidDevice};
 use tinyjson::JsonValue;
 
-use crate::{
-    util::open_device_vid_pid_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result,
-    SensorData3D,
-};
+use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D};
 
 /// The main structure representing a connected Nreal Light glasses
 pub struct NrealLight {
-    device_handle: DeviceHandle<GlobalContext>,
+    device: HidDevice,
     pending_packets: VecDeque<Packet>,
     last_heartbeat: std::time::Instant,
-    last_acc_gyro: Arc<Mutex<Option<(SensorData3D, SensorData3D)>>>,
+    ov580: Ov580,
 }
 
-const COMMAND_TIMEOUT: Duration = Duration::from_millis(250);
-const OV_580_TIMEOUT: Duration = Duration::from_millis(250);
+const COMMAND_TIMEOUT: i32 = 250;
+const OV_580_TIMEOUT: i32 = 250;
 
 impl ARGlasses for NrealLight {
     fn serial(&mut self) -> Result<String> {
@@ -48,102 +40,11 @@ impl ARGlasses for NrealLight {
     }
 
     fn read_event(&mut self) -> Result<GlassesEvent> {
-        // XXX: What we do here is super shaky.
-        //      First of all, we rely on read_event being continously called to send the heartbeat
-        //      Second, if read_event is not called often enough, the IMU stream will totally starve
-        //      all other event.
-        //      But having it in this order is necessary since if there are no events, there is a
-        //      guaranteed 1ms delay on the read_packet call.
-        //
-        //      Ideally these should be 3 separate threads, and a mpsc queue.
-        //      And read_event shouldn't even block.
-        loop {
-            let now = std::time::Instant::now();
-            if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
-                // Heartbeat packet
-                // Not sent as "run_command" as sometimes the Glasses don't bother to
-                // answer. E.g. when one of the buttons is pressed while it is running.
-                self.device_handle.write_interrupt(
-                    0x1,
-                    &Packet {
-                        category: b'@',
-                        cmd_id: b'K',
-                        ..Default::default()
-                    }
-                    .serialize()
-                    .ok_or(Error::Other("Packet serialization failed"))?,
-                    COMMAND_TIMEOUT,
-                )?;
-                self.last_heartbeat = now;
-            }
-            if let Some((accelerometer, gyroscope)) = self.last_acc_gyro.lock().unwrap().take() {
-                return Ok(GlassesEvent::AccGyro {
-                    accelerometer,
-                    gyroscope,
-                });
-            }
-            if Arc::strong_count(&self.last_acc_gyro) != 2 {
-                return Err(Error::Disconnected("Nreal Light OV580"));
-            }
-
-            let packet = if let Some(packet) = self.pending_packets.pop_front() {
-                packet
-            } else {
-                match self.read_packet(std::time::Duration::from_millis(1)) {
-                    Ok(packet) => packet,
-                    Err(Error::UsbError(rusb::Error::Timeout)) => continue,
-                    Err(e) => return Err(e),
-                }
-            };
-            match packet {
-                Packet {
-                    category: b'5',
-                    cmd_id: b'K',
-                    data,
-                } if data == b"UP" => return Ok(GlassesEvent::KeyPress(0)),
-                Packet {
-                    category: b'5',
-                    cmd_id: b'K',
-                    data,
-                } if data == b"DN" => return Ok(GlassesEvent::KeyPress(1)),
-                Packet {
-                    category: b'5',
-                    cmd_id: b'P',
-                    data,
-                } if data == b"near" => return Ok(GlassesEvent::ProximityNear),
-                Packet {
-                    category: b'5',
-                    cmd_id: b'P',
-                    data,
-                } if data == b"away" => return Ok(GlassesEvent::ProximityFar),
-                Packet {
-                    category: b'5',
-                    cmd_id: b'L',
-                    data,
-                } => {
-                    return Ok(GlassesEvent::AmbientLight(
-                        u16::from_str_radix(
-                            &String::from_utf8(data)
-                                .map_err(|_| Error::Other("Invalid utf-8 in ambient light msg"))?,
-                            16,
-                        )
-                        .map_err(|_| Error::Other("Invalid number in ambient light msg"))?,
-                    ))
-                }
-                // NOTE: this is not enabled currently
-                Packet {
-                    category: b'5',
-                    cmd_id: b'S',
-                    ..
-                } => return Ok(GlassesEvent::VSync),
-
-                _ => {
-                    if packet.category != 65 {
-                        // TODO: parse packet and actually return it
-                        eprintln!("Got packet: {packet:?}");
-                    }
-                }
-            }
+        self.send_heartbeat_if_needed()?;
+        if let Some(event) = self.read_mcu_packet()? {
+            Ok(event)
+        } else {
+            self.ov580.read_packet()
         }
     }
 
@@ -191,19 +92,11 @@ impl NrealLight {
     /// Only one instance can be alive at a time
     pub fn new() -> Result<Self> {
         let mut result = Self {
-            device_handle: open_device_vid_pid_endpoint(0x0486, 0x573c, 0x81)?,
+            device: HidApi::new()?.open(0x0486, 0x573c)?,
             pending_packets: Default::default(),
             last_heartbeat: std::time::Instant::now(),
-            last_acc_gyro: Default::default(),
+            ov580: Ov580::new()?,
         };
-        // Disable the VSync event. Right now all it does is mask every other message sometimes.
-        // XXX: In fact, since we are a bit slow on resubmitting the transfers, we miss a lot of
-        //      messages. The threading model should be fixed.
-        result.run_command(Packet {
-            category: b'1',
-            cmd_id: b'N',
-            data: vec![b'0'],
-        })?;
         // Send a "Yes, I am a working SDK" command
         // This is needed for SBS 3D display to work.
         result.run_command(Packet {
@@ -217,34 +110,110 @@ impl NrealLight {
             cmd_id: b'L',
             data: vec![b'1'],
         })?;
-        Ov580::new()?.start_receiving_thread(result.last_acc_gyro.clone());
+        // Enable VSync event
+        result.run_command(Packet {
+            category: b'1',
+            cmd_id: b'N',
+            data: vec![b'1'],
+        })?;
         Ok(result)
     }
 
-    fn read_packet(&mut self, timeout: std::time::Duration) -> Result<Packet> {
-        for _ in 0..8 {
-            let mut result = [0u8; 0x40];
-            self.device_handle
-                .read_interrupt(0x81, &mut result, timeout)?;
-            if let Some(packet) = Packet::deserialize(&result) {
-                return Ok(packet);
-            }
-        }
+    fn read_mcu_packet(&mut self) -> Result<Option<GlassesEvent>> {
+        let packet = if let Some(packet) = self.pending_packets.pop_front() {
+            packet
+        } else if let Some(packet) = self.read_packet(0)? {
+            packet
+        } else {
+            return Ok(None);
+        };
+        Ok(match packet {
+            Packet {
+                category: b'5',
+                cmd_id: b'K',
+                data,
+            } if data == b"UP" => Some(GlassesEvent::KeyPress(0)),
+            Packet {
+                category: b'5',
+                cmd_id: b'K',
+                data,
+            } if data == b"DN" => Some(GlassesEvent::KeyPress(1)),
+            Packet {
+                category: b'5',
+                cmd_id: b'P',
+                data,
+            } if data == b"near" => Some(GlassesEvent::ProximityNear),
+            Packet {
+                category: b'5',
+                cmd_id: b'P',
+                data,
+            } if data == b"away" => Some(GlassesEvent::ProximityFar),
+            Packet {
+                category: b'5',
+                cmd_id: b'L',
+                data,
+            } => Some(GlassesEvent::AmbientLight(
+                u16::from_str_radix(
+                    &String::from_utf8(data)
+                        .map_err(|_| Error::Other("Invalid utf-8 in ambient light msg"))?,
+                    16,
+                )
+                .map_err(|_| Error::Other("Invalid number in ambient light msg"))?,
+            )),
+            Packet {
+                category: b'5',
+                cmd_id: b'S',
+                ..
+            } => Some(GlassesEvent::VSync),
+            // NOTE: maybe we should retry right here instead of basically reporting timeout,
+            //       but we will be called again soon enough.
+            _ => None,
+        })
+    }
 
-        Err(Error::Other("Received too many junk packets"))
+    fn read_packet(&mut self, timeout: i32) -> Result<Option<Packet>> {
+        let mut result = [0u8; 0x40];
+        let packet_size = self.device.read_timeout(&mut result, timeout)?;
+        if packet_size == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(
+                Packet::deserialize(&result).ok_or(Error::Other("Malformed packet received"))?,
+            ))
+        }
+    }
+
+    fn send_heartbeat_if_needed(&mut self) -> Result<()> {
+        let now = std::time::Instant::now();
+        if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
+            // Heartbeat packet
+            // Not sent as "run_command" as sometimes the Glasses don't bother to
+            // answer. E.g. when one of the buttons is pressed while it is running.
+            self.device.write(
+                &Packet {
+                    category: b'@',
+                    cmd_id: b'K',
+                    ..Default::default()
+                }
+                .serialize()
+                .ok_or(Error::Other("Packet serialization failed"))?,
+            )?;
+            self.last_heartbeat = now;
+        }
+        Ok(())
     }
 
     fn run_command(&mut self, command: Packet) -> Result<Vec<u8>> {
-        self.device_handle.write_interrupt(
-            0x1,
+        self.device.write(
             &command
                 .serialize()
                 .ok_or(Error::Other("Packet serialization failed"))?,
-            COMMAND_TIMEOUT,
         )?;
 
         for _ in 0..64 {
-            let packet = self.read_packet(COMMAND_TIMEOUT)?;
+            let packet = self
+                .read_packet(COMMAND_TIMEOUT)?
+                .ok_or(Error::PacketTimeout)?;
             if packet.category == command.category + 1 && packet.cmd_id == command.cmd_id {
                 return Ok(packet.data);
             }
@@ -256,7 +225,7 @@ impl NrealLight {
 }
 
 struct Ov580 {
-    device_handle: DeviceHandle<GlobalContext>,
+    device: HidDevice,
     accel_bias_x: f32,
     accel_bias_y: f32,
     accel_bias_z: f32,
@@ -268,7 +237,7 @@ struct Ov580 {
 impl Ov580 {
     pub fn new() -> Result<Self> {
         let mut result = Self {
-            device_handle: open_device_vid_pid_endpoint(0x05a9, 0x0680, 0x89)?,
+            device: HidApi::new()?.open(0x05a9, 0x0680)?,
             accel_bias_x: 0.0,
             accel_bias_y: 0.0,
             accel_bias_z: 0.0,
@@ -279,6 +248,7 @@ impl Ov580 {
         // Turn off IMU stream while reading config
         result.command(0x19, 0x0)?;
         result.read_config()?;
+        // Turn IMU stream back on
         result.command(0x19, 0x1)?;
 
         Ok(result)
@@ -322,22 +292,13 @@ impl Ov580 {
     }
 
     fn command(&self, cmd: u8, subcmd: u8) -> Result<Vec<u8>> {
-        self.device_handle.write_control(
-            request_type(
-                rusb::Direction::Out,
-                rusb::RequestType::Class,
-                rusb::Recipient::Interface,
-            ),
-            0x09,   // HID Set_Report
-            0x0202, // Hid output + first byte of buffer
-            0x2,    // Interface number 2. XXX: Let's hope it is always this :/
-            &[2, cmd, subcmd, 0, 0, 0, 0],
-            OV_580_TIMEOUT,
-        )?;
+        self.device.write(&[2, cmd, subcmd, 0, 0, 0, 0])?;
         for _ in 0..64 {
             let mut result = [0u8; 0x80];
-            self.device_handle
-                .read_interrupt(0x89, &mut result, OV_580_TIMEOUT)?;
+            let result_size = self.device.read_timeout(&mut result, OV_580_TIMEOUT)?;
+            if result_size == 0 {
+                return Err(Error::PacketTimeout);
+            }
             if result[0] == 2 {
                 return Ok(result.into());
             }
@@ -345,37 +306,24 @@ impl Ov580 {
         Err(Error::Other("Couldn't get acknowledgement to command"))
     }
 
-    pub fn start_receiving_thread(
-        mut self,
-        sensor_data: Arc<Mutex<Option<(SensorData3D, SensorData3D)>>>,
-    ) {
-        // XXX: This is horribly inefficient.
-        //      Libusb is async by default, and the sync functions are just wrappers around
-        //      transfer submission. And now we make it async again, and then make it
-        //      sync again on read_event.
-        //      All this, because we don't want to store infinite event streams, should
-        //      something slow down on the caller side.
-        assert_eq!(Arc::strong_count(&sensor_data), 2);
-        std::thread::spawn(move || {
-            while Arc::strong_count(&sensor_data) == 2 {
-                match self.receive_one_report() {
-                    Err(_) => return, // TODO: maybe log?
-                    Ok(Some(data)) => *sensor_data.lock().unwrap() = Some(data),
-                    Ok(None) => {}
-                }
+    pub fn read_packet(&mut self) -> Result<GlassesEvent> {
+        loop {
+            let mut packet_data = [0u8; 0x80];
+            let data_size = self.device.read_timeout(&mut packet_data, OV_580_TIMEOUT)?;
+            if data_size == 0 {
+                return Err(Error::PacketTimeout);
             }
-        });
+
+            if packet_data[0] == 1 {
+                return self.parse_report(&packet_data);
+            };
+            // Else try again
+        }
     }
 
-    fn receive_one_report(&mut self) -> Result<Option<(SensorData3D, SensorData3D)>> {
-        let mut result = [0u8; 0x80];
-        self.device_handle
-            .read_interrupt(0x89, &mut result, OV_580_TIMEOUT)?;
-        if result[0] != 1 {
-            return Ok(None);
-        };
+    fn parse_report(&mut self, packet_data: &[u8]) -> Result<GlassesEvent> {
         // TODO: This skips over a 2 byte temperature field that may be useful.
-        let mut reader = std::io::Cursor::new(&result[44..]);
+        let mut reader = std::io::Cursor::new(&packet_data[44..]);
 
         let gyro_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
         let gyro_mul = reader.read_u32::<LittleEndian>()? as f32;
@@ -383,7 +331,7 @@ impl Ov580 {
         let gyro_x = reader.read_i32::<LittleEndian>()? as f32;
         let gyro_y = reader.read_i32::<LittleEndian>()? as f32;
         let gyro_z = reader.read_i32::<LittleEndian>()? as f32;
-        let gyro = SensorData3D {
+        let gyroscope = SensorData3D {
             timestamp: gyro_timestamp,
             x: (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias_x,
             y: -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias_y,
@@ -396,13 +344,16 @@ impl Ov580 {
         let acc_x = reader.read_i32::<LittleEndian>()? as f32;
         let acc_y = reader.read_i32::<LittleEndian>()? as f32;
         let acc_z = reader.read_i32::<LittleEndian>()? as f32;
-        let acc = SensorData3D {
+        let accelerometer = SensorData3D {
             timestamp: acc_timestamp,
             x: (acc_x * acc_mul / acc_div) * 9.81 - self.accel_bias_x,
             y: -(acc_y * acc_mul / acc_div) * 9.81 + self.accel_bias_y,
             z: -(acc_z * acc_mul / acc_div) * 9.81 + self.accel_bias_z,
         };
-        Ok(Some((acc, gyro)))
+        Ok(GlassesEvent::AccGyro {
+            accelerometer,
+            gyroscope,
+        })
     }
 }
 

@@ -46,11 +46,18 @@ pub enum Error {
     /// An rusb error happened. See [`rusb::Error`] for specifics
     #[cfg(feature = "rusb")]
     UsbError(rusb::Error),
+    /// A hidapi error happened. See [`hidapi::HidError`] for specifics
+    #[cfg(feature = "rusb")]
+    HidError(hidapi::HidError),
     /// A serialport error happened. See [`serialport::Error`] for specifics
     #[cfg(feature = "serialport")]
     SerialPortError(serialport::Error),
     /// No glasses were found.
     NotFound,
+    /// Packet sending or reception timed out. Note that this is not the only
+    /// timeout error that is sent (e.g. UsbError can contain a timeout), and
+    /// also this is usually a fatal one.
+    PacketTimeout,
     /// The glasses (or one of its devices) were disconnected
     Disconnected(&'static str),
     /// Other fatal error, usually a problem with the library itself, or
@@ -153,6 +160,13 @@ impl From<std::io::Error> for Error {
 impl From<rusb::Error> for Error {
     fn from(e: rusb::Error) -> Self {
         Error::UsbError(e)
+    }
+}
+
+#[cfg(feature = "hidapi")]
+impl From<hidapi::HidError> for Error {
+    fn from(e: hidapi::HidError) -> Self {
+        Error::HidError(e)
     }
 }
 
