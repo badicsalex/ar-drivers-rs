@@ -1,6 +1,6 @@
 [package]
 name = "ar-drivers"
-description = "Opensource driver for Rokid Air and Mad Gaze Glow AR glasses"
+description = "Opensource driver for some Rokid, Nreal and Mad Gaze AR glasses"
 version = "0.2.1"
 edition = "2021"
 

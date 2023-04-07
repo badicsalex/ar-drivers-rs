@@ -10,13 +10,13 @@ ones, I'd happily support them too.
 
 If you find Rust disgusting (and I wouldn't blame you), you could take a look
 at the code and reimplement the driver of your choice in any other language, 
-since they are rather simple (especially the Rokid one).
+since they are rather simple.
 
 ## Contribution
 
 I appreciate reported bugs, feature requests and of course pull request.
 
-I'd love to have a Rokid MAx, Rokid Lite, an Nreal Air or Moverio so if
+I'd love to have a Rokid Max, an Nreal Air or Moverio so if
 you have a spare one you'd throw out, you could mail it to me instead :)
 
 ## License
