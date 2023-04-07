@@ -85,6 +85,20 @@ impl ARGlasses for NrealLight {
             Err(Error::Other("Display mode setting unsuccessful"))
         }
     }
+
+    fn display_fov(&self) -> f32 {
+        // 24.0° is the advertised FOV
+        // According to measurements, it is even a bit better
+        24.5f32.to_radians()
+    }
+
+    fn display_tilt(&self) -> f32 {
+        -0.265
+    }
+
+    fn name(&self) -> &'static str {
+        "Nreal Light"
+    }
 }
 
 impl NrealLight {

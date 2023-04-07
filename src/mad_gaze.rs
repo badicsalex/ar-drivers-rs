@@ -88,6 +88,24 @@ impl ARGlasses for MadGazeGlow {
             Err(Error::Other("Invalid answer to the S3D command"))
         }
     }
+
+    fn display_fov(&self) -> f32 {
+        // The 23.5 degrees here is an actual measurement result
+        //
+        // However it actually does correspond somewhat to the advertised
+        // 53 degree diagonal FOV:
+        // degrees(atan(tan(radians(53))*(16/sqrt(16**2 + 9**2))))/2
+        // == 24.5
+        23.5f32.to_radians()
+    }
+
+    fn display_tilt(&self) -> f32 {
+        0.12
+    }
+
+    fn name(&self) -> &'static str {
+        "Mad Gaze Glow"
+    }
 }
 
 const AK09911_ADDRESS: u8 = 12;

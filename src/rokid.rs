@@ -143,6 +143,20 @@ impl ARGlasses for RokidAir {
         )?;
         Ok(())
     }
+
+    fn display_fov(&self) -> f32 {
+        // 21° is the advertised FOV
+        // 20° is the (dynamically) measured one. It works better with normal PD settings
+        20f32.to_radians()
+    }
+
+    fn display_tilt(&self) -> f32 {
+        0.022
+    }
+
+    fn name(&self) -> &'static str {
+        "Rokid Air"
+    }
 }
 
 impl RokidAir {

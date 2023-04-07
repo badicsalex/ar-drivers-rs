@@ -122,7 +122,7 @@ pub enum DisplayMode {
 }
 
 /// Common interface for AR implemented glasses
-pub trait ARGlasses {
+pub trait ARGlasses: Send {
     /// Get the serial number of the glasses
     fn serial(&mut self) -> Result<String>;
     /// Get a single sensor event. Blocks.
@@ -131,6 +131,12 @@ pub trait ARGlasses {
     fn get_display_mode(&mut self) -> Result<DisplayMode>;
     /// Set the display mode of the glasses. See [`DisplayMode`]
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()>;
+    /// Field of view of the display along the horizontal axis, in radians
+    fn display_fov(&self) -> f32;
+    /// Tilt of the display compared to the IMU readings, in radians. Positive means tilted up.
+    fn display_tilt(&self) -> f32;
+    /// Name of the device
+    fn name(&self) -> &'static str;
 }
 
 /// Convenience function to detect and connect to any of the supported glasses
