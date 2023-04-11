@@ -8,9 +8,8 @@ It supports getting basic sensor data and setting up the display.
 While only the these glasses is supported right now, if I could get my hands on some other
 ones, I'd happily support them too.
 
-If you find Rust disgusting (and I wouldn't blame you), you could take a look
-at the code and reimplement the driver of your choice in any other language, 
-since they are rather simple.
+There's a [somewhat detailed blogpost documenting the various protocols](https://voidcomputing.hu/blog/good-bad-ugly/)
+too. So if you're only intereted in that, you won't even need to read Rust code :)
 
 ## Contribution
 
