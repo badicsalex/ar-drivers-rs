@@ -24,7 +24,7 @@ Licensed under the MIT license
 
 ## Legal stuff
 
-Some parts of the protocol was obtained with reverse engineering.
+Some parts of the protocols were obtained with reverse engineering.
 
 Reverse engineering explicitly allowed in the EU for interworking purposes,
 it's probably fair use everywhere else, but you should check your own

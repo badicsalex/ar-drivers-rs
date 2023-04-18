@@ -11,10 +11,10 @@
 //! let mut glasses = any_glasses().unwrap();
 //! loop {
 //!     match glasses.read_event().unwrap() {
-//!         GlassesEvent::Accelerometer(data) => ...,
-//!         GlassesEvent::Gyroscope(data) => ...,
+//!         GlassesEvent::AccGyro {accelerometer, gyroscope} => ...,
 //!         GlassesEvent::Magnetometer(data) => ...,
-//!         GlassesEvent::Misc(data) => ...,
+//!         GlassesEvent::KeyPress(data) => ...,
+//!         _ => {}
 //!     }
 //! }
 //! ```
@@ -22,6 +22,17 @@
 //! As opposed to e.g. Rokid's own API, this is all that you get, since this is what comes
 //! out of the hardware. To get quaternions, you should probably use a lib that implements
 //! Madgwicks algorithm or a proper EKF. One good choice is the `eskf` crate.
+//!
+//! ## Feature flags
+//!
+//! Support for individual AR glasses types ca be enabled with the following features:
+//!
+//! * `mad_gaze`: Mad Gaze Glow
+//! * `nreal`: Nreal Light
+//! * `rokid`: Rokid Air
+//!
+//! All of them are enabled by default, which may bring in some unwanted dependencies if you
+//! only want to support a specific type.
 
 #[cfg(feature = "mad_gaze")]
 use mad_gaze::MadGazeGlow;
@@ -67,7 +78,7 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-/// AR glasses sensor event, got from [`Glasses::read_event`]
+/// AR glasses sensor event, got from [`ARGlasses::read_event`]
 #[derive(Debug, Clone)]
 pub enum GlassesEvent {
     /// Synchronized accelerometer and gyroscope data.
@@ -111,7 +122,7 @@ pub struct SensorData3D {
     pub z: f32,
 }
 
-/// Display mode used by [`Glasses::set_display_mode`]
+/// Display mode used by [`ARGlasses::set_display_mode`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
     /// Picture should be same for both eyes (simple full HD mode)

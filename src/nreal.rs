@@ -3,7 +3,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for details.
 
 //! Nreal Light AR glasses support. See [`NrealLight`]
-//! It only uses [`rusb`] for communication.
+//! It only uses [`hidapi`] for communication.
 //!
 //! **Important note**: The NReal Light requires constant heartbeats in 3D SBS mode,
 //! or else it switches the screen off. This heartbeat is sent periodically when
