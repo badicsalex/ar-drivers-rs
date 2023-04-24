@@ -54,7 +54,7 @@ impl ARGlasses for NrealLight {
             cmd_id: b'3',
             ..Default::default()
         })?;
-        match result.get(0) {
+        match result.first() {
             // "1&2D_1080"
             Some(b'1') => Ok(DisplayMode::SameOnBoth),
             // "2&3D_540"
@@ -79,7 +79,7 @@ impl ARGlasses for NrealLight {
             data: vec![display_mode_byte],
         })?;
 
-        if result.get(0) == Some(&display_mode_byte) {
+        if result.first() == Some(&display_mode_byte) {
             Ok(())
         } else {
             Err(Error::Other("Display mode setting unsuccessful"))
@@ -397,8 +397,8 @@ impl Packet {
         let inner = &data[1..end];
         let mut parts = inner.split(|c| *c == b':');
         let _empty = parts.next()?;
-        let category = *parts.next()?.get(0)?;
-        let cmd_id = *parts.next()?.get(0)?;
+        let category = *parts.next()?.first()?;
+        let cmd_id = *parts.next()?.first()?;
         let cmd_data = parts.next()?.into();
         // Next field is timestamp
         // Last field is CRC
@@ -413,14 +413,14 @@ impl Packet {
     fn serialize(&self) -> Option<[u8; 0x40]> {
         let mut writer = std::io::Cursor::new([0u8; 0x40]);
         writer
-            .write(&[2, b':', self.category, b':', self.cmd_id, b':'])
+            .write_all(&[2, b':', self.category, b':', self.cmd_id, b':'])
             .ok()?;
-        writer.write(&self.data).ok()?;
+        writer.write_all(&self.data).ok()?;
         // Fake timestamp
-        writer.write(b":0:").ok()?;
+        writer.write_all(b":0:").ok()?;
         let crc = crc32(&writer.get_ref()[0..writer.position() as usize]);
         write!(writer, "{crc:>8x}").ok()?;
-        writer.write(&[b':', 3]).ok()?;
+        writer.write_all(&[b':', 3]).ok()?;
         let result = writer.into_inner();
         Some(result)
     }
@@ -470,5 +470,5 @@ fn crc32(buf: &[u8]) -> u32 {
         r = (r >> 8) ^ CRCTABLE[idx as usize];
     }
 
-    return r ^ 0xffffffffu32;
+    r ^ 0xffffffffu32
 }
