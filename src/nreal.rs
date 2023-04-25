@@ -133,6 +133,12 @@ impl NrealLight {
         Ok(result)
     }
 
+    /// Returns the calibration data stored on the Glasses. No transformation
+    /// is done on the data, except for Json Parsing.
+    pub fn get_config_json(&self) -> &JsonValue {
+        &self.ov580.config_json
+    }
+
     fn read_mcu_packet(&mut self) -> Result<Option<GlassesEvent>> {
         let packet = if let Some(packet) = self.pending_packets.pop_front() {
             packet
@@ -240,24 +246,14 @@ impl NrealLight {
 
 struct Ov580 {
     device: HidDevice,
-    accel_bias_x: f32,
-    accel_bias_y: f32,
-    accel_bias_z: f32,
-    gyro_bias_x: f32,
-    gyro_bias_y: f32,
-    gyro_bias_z: f32,
+    config_json: JsonValue,
 }
 
 impl Ov580 {
     pub fn new() -> Result<Self> {
         let mut result = Self {
             device: HidApi::new()?.open(0x05a9, 0x0680)?,
-            accel_bias_x: 0.0,
-            accel_bias_y: 0.0,
-            accel_bias_z: 0.0,
-            gyro_bias_x: 0.0,
-            gyro_bias_y: 0.0,
-            gyro_bias_z: 0.0,
+            config_json: JsonValue::Null,
         };
         // Turn off IMU stream while reading config
         result.command(0x19, 0x0)?;
@@ -283,7 +279,7 @@ impl Ov580 {
             if config[i..i + 3] == [b'\n', b'\n', b'{'] {
                 let config_as_str = String::from_utf8(config[i + 2..].into())
                     .map_err(|_| Error::Other("Invalid glasses config format (no start token)"))?;
-                let config: JsonValue = config_as_str
+                self.config_json = config_as_str
                     .split_once("\n\n")
                     .ok_or(Error::Other("Invalid glasses config format (no end token)"))?
                     .0
@@ -291,15 +287,6 @@ impl Ov580 {
                     .map_err(|_| {
                         Error::Other("Invalid glasses config format (JSON parse error)")
                     })?;
-                // XXX: this may panic but at this point it's super unlikely.
-                let accel_bias = &config["IMU"]["device_1"]["accel_bias"];
-                self.accel_bias_x = f64::try_from(accel_bias[0].clone()).unwrap() as f32;
-                self.accel_bias_y = f64::try_from(accel_bias[1].clone()).unwrap() as f32;
-                self.accel_bias_z = f64::try_from(accel_bias[2].clone()).unwrap() as f32;
-                let gyro_bias = &config["IMU"]["device_1"]["gyro_bias"];
-                self.gyro_bias_x = f64::try_from(gyro_bias[0].clone()).unwrap() as f32;
-                self.gyro_bias_y = f64::try_from(gyro_bias[1].clone()).unwrap() as f32;
-                self.gyro_bias_z = f64::try_from(gyro_bias[2].clone()).unwrap() as f32;
             }
         }
         Ok(())
@@ -338,6 +325,15 @@ impl Ov580 {
     fn parse_report(&mut self, packet_data: &[u8]) -> Result<GlassesEvent> {
         // TODO: This skips over a 2 byte temperature field that may be useful.
         let mut reader = std::io::Cursor::new(&packet_data[44..]);
+        // XXX: this may panic but at this point it's super unlikely.
+        let accel_bias = &self.config_json["IMU"]["device_1"]["accel_bias"];
+        let accel_bias_x = *accel_bias[0].get::<f64>().unwrap() as f32;
+        let accel_bias_y = *accel_bias[1].get::<f64>().unwrap() as f32;
+        let accel_bias_z = *accel_bias[2].get::<f64>().unwrap() as f32;
+        let gyro_bias = &self.config_json["IMU"]["device_1"]["gyro_bias"];
+        let gyro_bias_x = *gyro_bias[0].get::<f64>().unwrap() as f32;
+        let gyro_bias_y = *gyro_bias[1].get::<f64>().unwrap() as f32;
+        let gyro_bias_z = *gyro_bias[2].get::<f64>().unwrap() as f32;
 
         let gyro_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
         let gyro_mul = reader.read_u32::<LittleEndian>()? as f32;
@@ -347,9 +343,9 @@ impl Ov580 {
         let gyro_z = reader.read_i32::<LittleEndian>()? as f32;
         let gyroscope = SensorData3D {
             timestamp: gyro_timestamp,
-            x: (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias_x,
-            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias_y,
-            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias_z,
+            x: (gyro_x * gyro_mul / gyro_div).to_radians() - gyro_bias_x,
+            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + gyro_bias_y,
+            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + gyro_bias_z,
         };
 
         let acc_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
@@ -360,9 +356,9 @@ impl Ov580 {
         let acc_z = reader.read_i32::<LittleEndian>()? as f32;
         let accelerometer = SensorData3D {
             timestamp: acc_timestamp,
-            x: (acc_x * acc_mul / acc_div) * 9.81 - self.accel_bias_x,
-            y: -(acc_y * acc_mul / acc_div) * 9.81 + self.accel_bias_y,
-            z: -(acc_z * acc_mul / acc_div) * 9.81 + self.accel_bias_z,
+            x: (acc_x * acc_mul / acc_div) * 9.81 - accel_bias_x,
+            y: -(acc_y * acc_mul / acc_div) * 9.81 + accel_bias_y,
+            z: -(acc_z * acc_mul / acc_div) * 9.81 + accel_bias_z,
         };
         Ok(GlassesEvent::AccGyro {
             accelerometer,
