@@ -1,8 +1,8 @@
-# AR drivers
+# AR driver library for Rust
 [![Crates.io](https://img.shields.io/crates/v/ar-drivers.svg)](https://crates.io/crates/ar-drivers)
 [![Docs.rs](https://docs.rs/ar-drivers/badge.svg)](https://docs.rs/ar-drivers)
 
-This repository contains is a simplified driver for Rokid Air, Nreal Light and Mad Gaze Glow AR glasses.
+This repository contains is a simplified Rust SDK for Rokid Air, Nreal Light and Mad Gaze Glow AR glasses.
 It supports getting basic sensor data and setting up the display.
 
 While only the these glasses is supported right now, if I could get my hands on some other
