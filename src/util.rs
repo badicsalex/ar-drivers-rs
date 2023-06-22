@@ -2,10 +2,13 @@
 // This file is part of ar-drivers-rs
 // Licensed under the MIT license. See LICENSE file in the project root for details.
 
+#[cfg(feature = "rusb")]
 use rusb::{Device, DeviceHandle, DeviceList, GlobalContext};
 
+#[allow(unused_imports)]
 use crate::{Error, Result};
 
+#[cfg(feature = "rusb")]
 fn get_device_vid_pid(vid: u16, pid: u16) -> Result<Device<GlobalContext>> {
     for device in DeviceList::new()?.iter() {
         if let Ok(desc) = device.device_descriptor() {
@@ -17,6 +20,7 @@ fn get_device_vid_pid(vid: u16, pid: u16) -> Result<Device<GlobalContext>> {
     Err(Error::NotFound)
 }
 
+#[cfg(feature = "rusb")]
 fn get_interface_for_endpoint(device: &Device<GlobalContext>, endpoint_address: u8) -> Option<u8> {
     let config_desc = device.config_descriptor(0).ok()?;
     for interface in config_desc.interfaces() {
@@ -31,6 +35,7 @@ fn get_interface_for_endpoint(device: &Device<GlobalContext>, endpoint_address: 
     None
 }
 
+#[cfg(feature = "rusb")]
 pub fn open_device_vid_pid_endpoint(
     vid: u16,
     pid: u16,

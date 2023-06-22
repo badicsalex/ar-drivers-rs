@@ -58,7 +58,7 @@ pub enum Error {
     #[cfg(feature = "rusb")]
     UsbError(rusb::Error),
     /// A hidapi error happened. See [`hidapi::HidError`] for specifics
-    #[cfg(feature = "rusb")]
+    #[cfg(feature = "hidapi")]
     HidError(hidapi::HidError),
     /// A serialport error happened. See [`serialport::Error`] for specifics
     #[cfg(feature = "serialport")]
