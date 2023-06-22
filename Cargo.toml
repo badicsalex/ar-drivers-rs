@@ -20,10 +20,16 @@ mad_gaze = ["serialport"]
 
 [dependencies]
 byteorder = "1.4"
-hidapi = { version = "2.2.2", optional = true }
 rusb = { version = "0.9.1", optional = true }
 serialport = { version = "4.2", optional = true }
 tinyjson = { version = "2.5.1", optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+hidapi = { version = "2.2.2", default-features=false, features = [ "linux-static-libusb" ], optional = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+hidapi = { version = "2.2.2", optional = true }
+
 
 [dev-dependencies]
 clap = { version = "4.2", features = ["derive"] }
