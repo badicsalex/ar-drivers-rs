@@ -102,14 +102,28 @@ impl ARGlasses for NrealLight {
 }
 
 impl NrealLight {
+    /// Connect to a specific Nreal device, based on the two USB fds
+    /// Mainly made to work around android permission issues
+    #[cfg(target_os = "android")]
+    pub fn new(mcu_fd: isize, ov580_fd: isize) -> Result<Self> {
+        Self::new_common(
+            HidApi::new_without_enumerate()?.wrap_sys_device(mcu_fd, -1)?,
+            Ov580::new(ov580_fd)?,
+        )
+    }
+
     /// Find a connected Nreal Light device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
+    #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
+        Self::new_common(HidApi::new()?.open(0x0486, 0x573c)?, Ov580::new()?)
+    }
+    fn new_common(device: HidDevice, ov580: Ov580) -> Result<Self> {
         let mut result = Self {
-            device: HidApi::new()?.open(0x0486, 0x573c)?,
+            device,
             pending_packets: Default::default(),
             last_heartbeat: std::time::Instant::now(),
-            ov580: Ov580::new()?,
+            ov580,
         };
         // Send a "Yes, I am a working SDK" command
         // This is needed for SBS 3D display to work.
@@ -250,9 +264,18 @@ struct Ov580 {
 }
 
 impl Ov580 {
+    #[cfg(target_os = "android")]
+    pub fn new(fd: isize) -> Result<Self> {
+        Self::new_device(HidApi::new_without_enumerate()?.wrap_sys_device(fd, -1)?)
+    }
+
+    #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
+        Self::new_device(HidApi::new()?.open(0x05a9, 0x0680)?)
+    }
+    fn new_device(device: HidDevice) -> Result<Self> {
         let mut result = Self {
-            device: HidApi::new()?.open(0x05a9, 0x0680)?,
+            device,
             config_json: JsonValue::Null,
         };
         // Turn off IMU stream while reading config
