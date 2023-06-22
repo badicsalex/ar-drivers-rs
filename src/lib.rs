@@ -35,13 +35,6 @@
 //! only want to support a specific type.
 
 #[cfg(feature = "mad_gaze")]
-use mad_gaze::MadGazeGlow;
-#[cfg(feature = "nreal")]
-use nreal::NrealLight;
-#[cfg(feature = "rokid")]
-use rokid::RokidAir;
-
-#[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
 #[cfg(feature = "nreal")]
 pub mod nreal;
@@ -151,17 +144,18 @@ pub trait ARGlasses: Send {
 }
 
 /// Convenience function to detect and connect to any of the supported glasses
+#[cfg(not(target_os = "android"))]
 pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
     #[cfg(feature = "rokid")]
-    if let Ok(glasses) = RokidAir::new() {
+    if let Ok(glasses) = rokid::RokidAir::new() {
         return Ok(Box::new(glasses));
     };
     #[cfg(feature = "nreal")]
-    if let Ok(glasses) = NrealLight::new() {
+    if let Ok(glasses) = nreal::NrealLight::new() {
         return Ok(Box::new(glasses));
     };
     #[cfg(feature = "mad_gaze")]
-    if let Ok(glasses) = MadGazeGlow::new() {
+    if let Ok(glasses) = mad_gaze::MadGazeGlow::new() {
         return Ok(Box::new(glasses));
     };
     Err(Error::NotFound)
