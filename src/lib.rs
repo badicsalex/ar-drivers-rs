@@ -69,6 +69,38 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::IoError(e) => Some(e),
+            #[cfg(feature = "rusb")]
+            Error::UsbError(e) => Some(e),
+            #[cfg(feature = "hidapi")]
+            Error::HidError(e) => Some(e),
+            #[cfg(feature = "serialport")]
+            Error::SerialPortError(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Error::IoError(_) => "I/O error",
+            #[cfg(feature = "rusb")]
+            Error::UsbError(_) => "Libusb error",
+            #[cfg(feature = "hidapi")]
+            Error::HidError(_) => "Hidapi error",
+            #[cfg(feature = "serialport")]
+            Error::SerialPortError(_) => "Serial error",
+            Error::NotFound => "Glasses not found",
+            Error::PacketTimeout => "Packet timeout",
+            Error::Other(s) => s,
+        })
+    }
+}
+
 /// AR glasses sensor event, got from [`ARGlasses::read_event`]
 #[derive(Debug, Clone)]
 pub enum GlassesEvent {
