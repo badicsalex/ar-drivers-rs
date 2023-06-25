@@ -102,6 +102,15 @@ impl ARGlasses for NrealLight {
 }
 
 impl NrealLight {
+    /// Vendor ID of the NReal Light's MCU
+    pub const MCU_VID: u16 = 0x0486;
+    /// Product ID of the NReal Light's MCU
+    pub const MCU_PID: u16 = 0x573c;
+
+    /// Vendor ID of the NReal Light's OV580 camera (and IMU)
+    pub const OV580_VID: u16 = 0x05a9;
+    /// Product ID of the NReal Light's OV580 camera (and IMU)
+    pub const OV580_PID: u16 = 0x0680;
     /// Connect to a specific Nreal device, based on the two USB fds
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
@@ -116,7 +125,10 @@ impl NrealLight {
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        Self::new_common(HidApi::new()?.open(0x0486, 0x573c)?, Ov580::new()?)
+        Self::new_common(
+            HidApi::new()?.open(Self::MCU_PID, Self::MCU_VID)?,
+            Ov580::new()?,
+        )
     }
     fn new_common(device: HidDevice, ov580: Ov580) -> Result<Self> {
         let mut result = Self {
@@ -271,7 +283,7 @@ impl Ov580 {
 
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        Self::new_device(HidApi::new()?.open(0x05a9, 0x0680)?)
+        Self::new_device(HidApi::new()?.open(NrealLight::OV580_VID, NrealLight::OV580_PID)?)
     }
     fn new_device(device: HidDevice) -> Result<Self> {
         let mut result = Self {
