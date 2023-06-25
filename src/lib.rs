@@ -62,8 +62,6 @@ pub enum Error {
     /// timeout error that is sent (e.g. UsbError can contain a timeout), and
     /// also this is usually a fatal one.
     PacketTimeout,
-    /// The glasses (or one of its devices) were disconnected
-    Disconnected(&'static str),
     /// Other fatal error, usually a problem with the library itself, or
     /// a device support issue. File a bug if you encounter this.
     Other(&'static str),
