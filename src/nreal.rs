@@ -126,7 +126,7 @@ impl NrealLight {
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
         Self::new_common(
-            HidApi::new()?.open(Self::MCU_PID, Self::MCU_VID)?,
+            HidApi::new()?.open(Self::MCU_VID, Self::MCU_PID)?,
             Ov580::new()?,
         )
     }
