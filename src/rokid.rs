@@ -10,9 +10,7 @@ use std::{io::Cursor, time::Duration};
 use byteorder::{ReadBytesExt, LE};
 use rusb::{request_type, DeviceHandle, GlobalContext};
 
-use crate::{
-    util::open_device_vid_pid_endpoint, ARGlasses, DisplayMode, GlassesEvent, Result, SensorData3D,
-};
+use crate::{ARGlasses, DisplayMode, GlassesEvent, Result, SensorData3D};
 
 /// The main structure representing a connected Rokid Air glasses
 pub struct RokidAir {
@@ -160,11 +158,52 @@ impl ARGlasses for RokidAir {
 }
 
 impl RokidAir {
+    /// Vendor ID of the Rokid Air (Yes, it is 1234. Yes that's probably not very legit)
+    pub const VID: u16 = 0x04d2;
+    /// Product ID of the Rokid Air
+    pub const PID: u16 = 0x162f;
+
+    /// Connect to a specific Nreal device, based on the two USB fds
+    /// Mainly made to work around android permission issues
+    #[cfg(target_os = "android")]
+    pub fn new(fd: isize) -> Result<Self> {
+        use rusb::UsbContext;
+
+        use crate::{util::get_interface_for_endpoint, Error};
+
+        // Do not scan for devices in libusb_init()
+        // This is needed on Android, where access to USB devices is limited
+        unsafe { rusb::ffi::libusb_set_option(std::ptr::null_mut(), 2) };
+
+        let mut device_handle = unsafe { GlobalContext::default().open_device_with_fd(fd as i32) }?;
+
+        device_handle.set_auto_detach_kernel_driver(true)?;
+
+        device_handle.claim_interface(
+            get_interface_for_endpoint(&device_handle.device(), INTERRUPT_IN_ENDPOINT).ok_or_else(
+                || Error::Other("Could not find endpoint, wrong USB structure (probably)"),
+            )?,
+        )?;
+
+        Self::new_common(device_handle)
+    }
+
     /// Find a connected Rokid Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
+    #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
+        use crate::util::open_device_vid_pid_endpoint;
+
+        Self::new_common(open_device_vid_pid_endpoint(
+            Self::VID,
+            Self::PID,
+            INTERRUPT_IN_ENDPOINT,
+        )?)
+    }
+
+    fn new_common(device_handle: DeviceHandle<GlobalContext>) -> Result<Self> {
         let result = Self {
-            device_handle: open_device_vid_pid_endpoint(0x04d2, 0x162f, INTERRUPT_IN_ENDPOINT)?,
+            device_handle,
             last_accelerometer: None,
             last_gyroscope: None,
             key_was_pressed: false,
