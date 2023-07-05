@@ -89,7 +89,7 @@ impl ARGlasses for NrealLight {
     fn display_fov(&self) -> f32 {
         // 24.0° is the advertised FOV
         // According to measurements, it is even a bit better
-        24.5f32.to_radians()
+        25.0f32.to_radians()
     }
 
     fn display_tilt(&self) -> f32 {
