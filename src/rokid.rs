@@ -121,8 +121,10 @@ impl ARGlasses for RokidAir {
         )?;
         if result[1] == 0 {
             Ok(DisplayMode::SameOnBoth)
-        } else {
+        } else if result[1] == 1 {
             Ok(DisplayMode::Stereo)
+        } else {
+            Ok(DisplayMode::HighRefreshRate)
         }
     }
 
