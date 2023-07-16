@@ -70,8 +70,11 @@ impl ARGlasses for NrealLight {
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
         let display_mode_byte = match display_mode {
             DisplayMode::SameOnBoth => b'1',
+            DisplayMode::HalfSBS => b'2',
             // This could be 4 for 72Hz, but I don't trust that mode
             DisplayMode::Stereo => b'3',
+            // Nreal doesn't have HighRefreshRate, so map it to the SameOnBoth value
+            DisplayMode::HighRefreshRate => b'1',
         };
         let result = self.run_command(Packet {
             category: b'1',

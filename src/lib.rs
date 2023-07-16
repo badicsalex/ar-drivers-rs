@@ -150,9 +150,14 @@ pub struct SensorData3D {
 pub enum DisplayMode {
     /// Picture should be same for both eyes (simple full HD mode)
     SameOnBoth = 0,
-    /// Set display to 3840*1080, where the left half is the left eye, the right half
-    /// is the right eye
+    /// Set display to 3840*1080 or 3840x1200,
+    /// where the left half is the left eye, the right half is the right eye
     Stereo = 1,
+    /// Set display to half-SBS mode, which presents itsefl as 1920*1080 resolution,
+    /// but actually scales down everything to 960x540,then upscales to 3840x1080
+    HalfSBS = 2,
+    /// Set display to high refrash rate mode (typically 120Hz)
+    HighRefreshRate = 3,
 }
 
 /// Common interface for AR implemented glasses
