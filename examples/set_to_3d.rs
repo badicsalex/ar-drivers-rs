@@ -27,11 +27,12 @@ enum CliDisplayMode {
     /// where the left half is the left eye, the right half is the right eye
     #[value(name("3d"), alias("sbs"), alias("stereo"))]
     Stereo = 1,
-    /// Set display to half-SBS mode, which presents itsefl as 1920*1080 resolution,
+    /// Set display to half-SBS mode, which presents itself as 1920*1080 resolution,
     /// but actually scales down everything to 960x540,then upscales to 3840x1080
-    #[value(name("halfsbs"), alias("sbs2"), alias("half-stereo"))] // "sbs2" matches how half-SBS referred to in stereo3d filter in mpv player
+    // "sbs2" matches how half-SBS referred to in stereo3d filter in mpv player
+    #[value(name("halfsbs"), alias("sbs2"), alias("half-stereo"))]
     HalfSBS = 2,
-    /// Set display to high refrash rate mode (typically 120Hz)
+    /// Set display to high refresh rate mode (120Hz in case of Rokid, 72Hz with Nreal)
     #[value(name("120hz"), alias("high-refresh-rate"))]
     HighRefreshRate = 3,
 }
