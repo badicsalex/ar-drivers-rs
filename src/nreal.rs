@@ -58,11 +58,11 @@ impl ARGlasses for NrealLight {
             // "1&2D_1080"
             Some(b'1') => Ok(DisplayMode::SameOnBoth),
             // "2&3D_540"
-            Some(b'2') => Ok(DisplayMode::Stereo),
+            Some(b'2') => Ok(DisplayMode::HalfSBS),
             // "3&3D_1080"
             Some(b'3') => Ok(DisplayMode::Stereo),
             // "4&3D_1080#72"
-            Some(b'4') => Ok(DisplayMode::Stereo),
+            Some(b'4') => Ok(DisplayMode::HighRefreshRate),
             _ => Err(Error::Other("Unknown display mode")),
         }
     }
@@ -71,10 +71,8 @@ impl ARGlasses for NrealLight {
         let display_mode_byte = match display_mode {
             DisplayMode::SameOnBoth => b'1',
             DisplayMode::HalfSBS => b'2',
-            // This could be 4 for 72Hz, but I don't trust that mode
             DisplayMode::Stereo => b'3',
-            // Nreal doesn't have HighRefreshRate, so map it to the SameOnBoth value
-            DisplayMode::HighRefreshRate => b'1',
+            DisplayMode::HighRefreshRate => b'4',
         };
         let result = self.run_command(Packet {
             category: b'1',
