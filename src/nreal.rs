@@ -274,6 +274,8 @@ impl NrealLight {
 struct Ov580 {
     device: HidDevice,
     config_json: JsonValue,
+    gyro_bias: Vector3,
+    accelerometer_bias: Vector3,
 }
 
 impl Ov580 {
@@ -290,10 +292,13 @@ impl Ov580 {
         let mut result = Self {
             device,
             config_json: JsonValue::Null,
+            gyro_bias: Default::default(),
+            accelerometer_bias: Default::default(),
         };
         // Turn off IMU stream while reading config
         result.command(0x19, 0x0)?;
         result.read_config()?;
+        result.parse_config()?;
         // Turn IMU stream back on
         result.command(0x19, 0x1)?;
 
@@ -326,6 +331,23 @@ impl Ov580 {
             }
         }
         Ok(())
+    }
+
+    fn parse_config(&mut self) -> Result<()> {
+        // XXX: This will panic if config is not in expected format.
+        //      should probably return Err() instead.
+        let cfg = &self.config_json["IMU"]["device_1"];
+        self.accelerometer_bias = Self::parse_vector(&cfg["accel_bias"]);
+        self.gyro_bias = Self::parse_vector(&cfg["gyro_bias"]);
+        Ok(())
+    }
+
+    fn parse_vector(json: &JsonValue) -> Vector3 {
+        Vector3 {
+            x: *json[0].get::<f64>().unwrap() as f32,
+            y: *json[1].get::<f64>().unwrap() as f32,
+            z: *json[2].get::<f64>().unwrap() as f32,
+        }
     }
 
     fn command(&self, cmd: u8, subcmd: u8) -> Result<Vec<u8>> {
@@ -361,15 +383,6 @@ impl Ov580 {
     fn parse_report(&mut self, packet_data: &[u8]) -> Result<GlassesEvent> {
         // TODO: This skips over a 2 byte temperature field that may be useful.
         let mut reader = std::io::Cursor::new(&packet_data[44..]);
-        // XXX: this may panic but at this point it's super unlikely.
-        let accel_bias = &self.config_json["IMU"]["device_1"]["accel_bias"];
-        let accel_bias_x = *accel_bias[0].get::<f64>().unwrap() as f32;
-        let accel_bias_y = *accel_bias[1].get::<f64>().unwrap() as f32;
-        let accel_bias_z = *accel_bias[2].get::<f64>().unwrap() as f32;
-        let gyro_bias = &self.config_json["IMU"]["device_1"]["gyro_bias"];
-        let gyro_bias_x = *gyro_bias[0].get::<f64>().unwrap() as f32;
-        let gyro_bias_y = *gyro_bias[1].get::<f64>().unwrap() as f32;
-        let gyro_bias_z = *gyro_bias[2].get::<f64>().unwrap() as f32;
 
         let gyro_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
         let gyro_mul = reader.read_u32::<LittleEndian>()? as f32;
@@ -379,9 +392,9 @@ impl Ov580 {
         let gyro_z = reader.read_i32::<LittleEndian>()? as f32;
         let gyroscope = SensorData3D {
             timestamp: gyro_timestamp,
-            x: (gyro_x * gyro_mul / gyro_div).to_radians() - gyro_bias_x,
-            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + gyro_bias_y,
-            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + gyro_bias_z,
+            x: (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias.x,
+            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias.y,
+            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias.z,
         };
 
         let acc_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
@@ -392,9 +405,9 @@ impl Ov580 {
         let acc_z = reader.read_i32::<LittleEndian>()? as f32;
         let accelerometer = SensorData3D {
             timestamp: acc_timestamp,
-            x: (acc_x * acc_mul / acc_div) * 9.81 - accel_bias_x,
-            y: -(acc_y * acc_mul / acc_div) * 9.81 + accel_bias_y,
-            z: -(acc_z * acc_mul / acc_div) * 9.81 + accel_bias_z,
+            x: (acc_x * acc_mul / acc_div) * 9.81 - self.accelerometer_bias.x,
+            y: -(acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
+            z: -(acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
         };
         Ok(GlassesEvent::AccGyro {
             accelerometer,
@@ -503,4 +516,11 @@ fn crc32(buf: &[u8]) -> u32 {
     }
 
     r ^ 0xffffffffu32
+}
+
+#[derive(Debug, Default, Clone)]
+struct Vector3 {
+    x: f32,
+    y: f32,
+    z: f32,
 }
