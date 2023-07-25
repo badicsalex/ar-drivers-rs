@@ -5,13 +5,8 @@
 // Based on code by thejackimonster
 // See https://gitlab.com/TheJackiMonster/nrealAirLinuxDriver
 
-//! Nreal Light AR glasses support. See [`NrealLight`]
+//! Nreal Air AR glasses support. See [`NrealAir`]
 //! It only uses [`hidapi`] for communication.
-//!
-//! **Important note**: The NReal Light requires constant heartbeats in 3D SBS mode,
-//! or else it switches the screen off. This heartbeat is sent periodically when
-//! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
-//! every half a second or so)
 
 use std::collections::VecDeque;
 
@@ -24,7 +19,7 @@ use crate::{
     ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D,
 };
 
-/// The main structure representing a connected Nreal Light glasses
+/// The main structure representing a connected Nreal Air glasses
 pub struct NrealAir {
     device: HidDevice,
     pending_packets: VecDeque<McuPacket>,
@@ -122,7 +117,7 @@ impl NrealAir {
         )
     }
 
-    /// Find a connected Nreal Light device and connect to it. (And claim the USB interface)
+    /// Find a connected Nreal Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
