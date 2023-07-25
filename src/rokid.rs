@@ -165,7 +165,7 @@ impl RokidAir {
     /// Product ID of the Rokid Air
     pub const PID: u16 = 0x162f;
 
-    /// Connect to a specific Nreal device, based on the two USB fds
+    /// Connect to a specific glasses, based on the two USB fds
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
     pub fn new(fd: isize) -> Result<Self> {

@@ -112,6 +112,16 @@ impl NrealAir {
     /// Product ID of the NReal Air's components
     pub const PID: u16 = 0x0424;
 
+    /// Connect to a specific glasses, based on the
+    /// Mainly made to work around android permission issues
+    #[cfg(target_os = "android")]
+    pub fn new(fd: isize) -> Result<Self> {
+        Self::new_common(
+            HidApi::new_without_enumerate()?.wrap_sys_device(fd, 4)?,
+            ImuDevice::new(fd)?,
+        )
+    }
+
     /// Find a connected Nreal Light device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
@@ -207,7 +217,7 @@ struct ImuDevice {
 impl ImuDevice {
     #[cfg(target_os = "android")]
     pub fn new(fd: isize) -> Result<Self> {
-        Self::new_device(HidApi::new_without_enumerate()?.wrap_sys_device(fd, -1)?)
+        Self::new_device(HidApi::new_without_enumerate()?.wrap_sys_device(fd, 3)?)
     }
 
     #[cfg(not(target_os = "android"))]

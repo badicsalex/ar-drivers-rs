@@ -115,7 +115,8 @@ impl NrealLight {
     pub const OV580_VID: u16 = 0x05a9;
     /// Product ID of the NReal Light's OV580 camera (and IMU)
     pub const OV580_PID: u16 = 0x0680;
-    /// Connect to a specific Nreal device, based on the two USB fds
+
+    /// Connect to a specific glasses, based on the two USB fds
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
     pub fn new(mcu_fd: isize, ov580_fd: isize) -> Result<Self> {
