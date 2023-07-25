@@ -91,9 +91,9 @@ impl ARGlasses for NrealAir {
 
     // TODO
     fn display_fov(&self) -> f32 {
-        // 24.0° is the advertised FOV
-        // According to measurements, it is even a bit better
-        25.0f32.to_radians()
+        // This is a judgement call. The displays have a non-trivial distortion,
+        // so this value is a bit much in hte middle, a bit too low on the borders.
+        24.0f32.to_radians()
     }
 
     fn display_tilt(&self) -> f32 {
