@@ -26,7 +26,7 @@ pub struct NrealAir {
     imu_device: ImuDevice,
 }
 
-const COMMAND_TIMEOUT: i32 = 250;
+const COMMAND_TIMEOUT: i32 = 1000;
 const IMU_TIMEOUT: i32 = 250;
 
 impl ARGlasses for NrealAir {
@@ -52,7 +52,7 @@ impl ARGlasses for NrealAir {
             cmd_id: 0x7,
             ..Default::default()
         })?;
-        match result.first() {
+        match result.get(1) {
             // Mirror 60Hz
             Some(1) => Ok(DisplayMode::SameOnBoth),
             // SBS 60Hz
@@ -77,7 +77,7 @@ impl ARGlasses for NrealAir {
             data: vec![display_mode_byte],
         })?;
 
-        if result.first() == Some(&display_mode_byte) {
+        if result.first() == Some(&0) {
             Ok(())
         } else {
             Err(Error::Other("Display mode setting unsuccessful"))
