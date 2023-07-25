@@ -2,8 +2,14 @@
 [![Crates.io](https://img.shields.io/crates/v/ar-drivers.svg)](https://crates.io/crates/ar-drivers)
 [![Docs.rs](https://docs.rs/ar-drivers/badge.svg)](https://docs.rs/ar-drivers)
 
-This repository contains is a simplified Rust SDK for Rokid Air, Rokid Max\*,
-XREAL Light and Mad Gaze Glow AR glasses.
+This repository contains is a simplified Rust SDK for the following glasses:
+
+* XREAL Air
+* XREAL Light
+* Rokid Air
+* Rokid Max (Only display mode switching, no IMU data)
+* Mad Gaze Glow
+
 It supports getting basic sensor data and setting up the display.
 
 While only the these glasses is supported right now, if I could get my hands on some other
@@ -11,8 +17,6 @@ ones, I'd happily support them too.
 
 There's a [somewhat detailed blog post documenting the various protocols](https://voidcomputing.hu/blog/good-bad-ugly/)
 too. So if you're only interested in that, you won't even need to read Rust code :)
-
-(\*: The Rokid Max was not thoroughly tested but switching to 3D SBS mode seems to work)
 
 ## 3D SBS mode switching
 

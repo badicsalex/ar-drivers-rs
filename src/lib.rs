@@ -37,7 +37,9 @@
 #[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
 #[cfg(feature = "nreal")]
-pub mod nreal;
+pub mod nreal_air;
+#[cfg(feature = "nreal")]
+pub mod nreal_light;
 #[cfg(feature = "rokid")]
 pub mod rokid;
 mod util;
@@ -186,7 +188,11 @@ pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
         return Ok(Box::new(glasses));
     };
     #[cfg(feature = "nreal")]
-    if let Ok(glasses) = nreal::NrealLight::new() {
+    if let Ok(glasses) = nreal_air::NrealAir::new() {
+        return Ok(Box::new(glasses));
+    };
+    #[cfg(feature = "nreal")]
+    if let Ok(glasses) = nreal_light::NrealLight::new() {
         return Ok(Box::new(glasses));
     };
     #[cfg(feature = "mad_gaze")]

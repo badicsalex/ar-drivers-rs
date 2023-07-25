@@ -15,10 +15,11 @@ license = "MIT"
 [features]
 default = ["mad_gaze", "rokid", "nreal"]
 rokid = ["rusb"]
-nreal = ["hidapi", "tinyjson"]
+nreal = ["hidapi", "tinyjson", "bytemuck"]
 mad_gaze = ["serialport"]
 
 [dependencies]
+bytemuck = { version = "1.13.1", optional = true }
 byteorder = "1.4"
 rusb = { version = "0.9.1", optional = true }
 serialport = { version = "4.2", optional = true }
