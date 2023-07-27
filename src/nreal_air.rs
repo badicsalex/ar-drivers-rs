@@ -61,6 +61,14 @@ impl ARGlasses for NrealAir {
             Some(4) => Ok(DisplayMode::HighRefreshRate),
             // Mirror 72Hz
             Some(5) => Ok(DisplayMode::SameOnBoth),
+            // Horizontally stretched SBS, 60Hz
+            Some(8) => Ok(DisplayMode::HalfSBS),
+            // SBS 90Hz
+            Some(9) => Ok(DisplayMode::HighRefreshRate),
+            // Mirror 90Hz
+            Some(10) => Ok(DisplayMode::HighRefreshRate),
+            // Mirror 120Hz
+            Some(11) => Ok(DisplayMode::HighRefreshRate),
             _ => Err(Error::Other("Unknown display mode")),
         }
     }
@@ -68,9 +76,9 @@ impl ARGlasses for NrealAir {
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
         let display_mode_byte = match display_mode {
             DisplayMode::SameOnBoth => 1,
-            DisplayMode::HalfSBS => return Err(Error::Other("Display mode not supported")),
+            DisplayMode::HalfSBS => 8,
             DisplayMode::Stereo => 3,
-            DisplayMode::HighRefreshRate => 4,
+            DisplayMode::HighRefreshRate => 11,
         };
         let result = self.run_command(McuPacket {
             cmd_id: 0x08,
