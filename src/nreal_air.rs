@@ -346,7 +346,6 @@ impl ImuDevice {
             y: (acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
             z: (acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
         };
-        eprintln!("{accelerometer:?}\n{}", self.accelerometer_bias.z);
         // TODO: magnetometer. It's in the same format, but it's non-trivially
         //       rotated.
         // TODO: Check checksum
