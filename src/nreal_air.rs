@@ -213,8 +213,8 @@ impl NrealAir {
 struct ImuDevice {
     device: HidDevice,
     config_json: JsonValue,
-    gyro_bias: Vector3,
-    accelerometer_bias: Vector3,
+    gyro_bias: Vector3<f32>,
+    accelerometer_bias: Vector3<f32>,
 }
 
 impl ImuDevice {
@@ -268,12 +268,12 @@ impl ImuDevice {
         Ok(())
     }
 
-    fn parse_vector(json: &JsonValue) -> Vector3 {
-        Vector3 {
-            x: *json[0].get::<f64>().unwrap() as f32,
-            y: *json[1].get::<f64>().unwrap() as f32,
-            z: *json[2].get::<f64>().unwrap() as f32,
-        }
+    fn parse_vector(json: &JsonValue) -> Vector3<f32> {
+        Vector3::new(
+            *json[0].get::<f64>().unwrap() as f32,
+            *json[1].get::<f64>().unwrap() as f32,
+            *json[2].get::<f64>().unwrap() as f32,
+        )
     }
 
     fn command(&self, cmd_id: u8, data: &[u8]) -> Result<Vec<u8>> {

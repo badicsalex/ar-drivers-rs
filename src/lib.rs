@@ -34,6 +34,9 @@
 //! All of them are enabled by default, which may bring in some unwanted dependencies if you
 //! only want to support a specific type.
 
+#[cfg(feature = "nalgebra")]
+use nalgebra::{Isometry3, Matrix3, UnitQuaternion, Vector2};
+
 #[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
 #[cfg(feature = "nreal")]
@@ -178,6 +181,31 @@ pub trait ARGlasses: Send {
     fn display_tilt(&self) -> f32;
     /// Name of the device
     fn name(&self) -> &'static str;
+    /// Get built-in camera descriptors
+    #[cfg(feature = "nalgebra")]
+    fn cameras(&self) -> Result<Vec<CameraDescriptor>> {
+        Ok(Vec::new())
+    }
+}
+
+/// Represents one built-in camera
+///
+/// Warning: Experimental. May change between any versions.
+#[cfg(feature = "nalgebra")]
+#[derive(Debug, Clone)]
+pub struct CameraDescriptor {
+    /// The unique name for the type of the camera.
+    pub name: &'static str,
+    /// The width and height in pixels for the calibration data
+    pub resolution: Vector2<f64>,
+    /// The intrinsic matrix of the camera
+    pub intrinsic_matrix: Matrix3<f64>,
+    /// Distortion coefficients: k1, k2, p1, p2, k3
+    pub distortion: [f64; 5],
+    /// Additional rectification matrix for stereo cameras
+    pub stereo_rotation: UnitQuaternion<f64>,
+    /// Transformation from the IMU frame to the camera frame
+    pub imu_to_camera: Isometry3<f64>,
 }
 
 /// Convenience function to detect and connect to any of the supported glasses

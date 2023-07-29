@@ -14,8 +14,12 @@ use std::{collections::VecDeque, io::Write};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use hidapi::{HidApi, HidDevice};
+#[cfg(feature = "nalgebra")]
+use nalgebra::{Isometry3, Matrix3, Quaternion, UnitQuaternion, Vector2, Vector4};
 use tinyjson::JsonValue;
 
+#[cfg(feature = "nalgebra")]
+use crate::CameraDescriptor;
 use crate::{
     util::{crc32_adler, Vector3},
     ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D,
@@ -102,6 +106,23 @@ impl ARGlasses for NrealLight {
 
     fn name(&self) -> &'static str {
         "Nreal Light"
+    }
+
+    #[cfg(feature = "nalgebra")]
+    fn cameras(&self) -> Result<Vec<crate::CameraDescriptor>> {
+        let rgb = self.get_basic_camera_descriptor("rgb", "RGB_camera", "device_1")?;
+        let slam_left =
+            self.get_basic_camera_descriptor("Nreal Light SLAM left", "SLAM_camera", "device_1")?;
+        let mut slam_right =
+            self.get_basic_camera_descriptor("Nreal Light SLAM right", "SLAM_camera", "device_2")?;
+        slam_right.stereo_rotation = self
+            .get_config_float_array(&["SLAM_camera", "leftcam_q_rightcam"])
+            .map(Vector4::from_data)
+            .map(Quaternion::from_vector)
+            .map(UnitQuaternion::from_quaternion)?
+            .conjugate();
+
+        Ok(vec![rgb, slam_left, slam_right])
     }
 }
 
@@ -273,13 +294,77 @@ impl NrealLight {
 
         Err(Error::Other("Received too many unrelated packets"))
     }
+
+    #[cfg(feature = "nalgebra")]
+    fn get_config_float_array<const N: usize>(
+        &self,
+        keys: &[&str],
+    ) -> Result<nalgebra::ArrayStorage<f64, N, 1>> {
+        use std::collections::HashMap;
+
+        let mut result = [0.0; N];
+        let mut json_val = self.get_config_json();
+        for key in keys {
+            json_val = json_val
+                .get::<HashMap<String, JsonValue>>()
+                .ok_or(Error::Other("Json value is not an object"))?
+                .get(*key)
+                .ok_or(Error::Other("Json key not found"))?;
+        }
+        let json_val = json_val
+            .get::<Vec<JsonValue>>()
+            .ok_or(Error::Other("Json value not an array"))?;
+        if json_val.len() != N {
+            return Err(Error::Other("Json array is the wrong length"));
+        }
+        for i in 0..N {
+            result[i] = *json_val[i]
+                .get::<f64>()
+                .ok_or(Error::Other("Json value is not a float"))?;
+        }
+        Ok(nalgebra::ArrayStorage([result]))
+    }
+
+    #[cfg(feature = "nalgebra")]
+    fn get_basic_camera_descriptor(
+        &self,
+        name: &'static str,
+        k1: &str,
+        k2: &str,
+    ) -> Result<CameraDescriptor> {
+        let imu_p_cam = self
+            .get_config_float_array(&[k1, k2, "imu_p_cam"])
+            .map(Vector3::from_data);
+        let imu_q_cam = self
+            .get_config_float_array(&[k1, k2, "imu_q_cam"])
+            .map(Vector4::from_data)
+            .map(Quaternion::from_vector)
+            .map(UnitQuaternion::from_quaternion);
+
+        Ok(CameraDescriptor {
+            name,
+            resolution: Vector2::from_data(self.get_config_float_array(&[k1, k2, "resolution"])?),
+            intrinsic_matrix: {
+                let cc = Vector2::from_data(self.get_config_float_array(&[k1, k2, "cc"])?);
+                let fc = Vector2::from_data(self.get_config_float_array(&[k1, k2, "fc"])?);
+                Matrix3::new(fc.x, 0.0, cc.x, 0.0, fc.y, cc.y, 0.0, 0.0, 1.0)
+            },
+            distortion: self.get_config_float_array(&[k1, k2, "kc"])?.0[0],
+            stereo_rotation: Default::default(),
+            imu_to_camera: if let (Ok(p), Ok(q)) = (imu_p_cam, imu_q_cam) {
+                Isometry3::from_parts(p.into(), q)
+            } else {
+                Default::default()
+            },
+        })
+    }
 }
 
 struct Ov580 {
     device: HidDevice,
     config_json: JsonValue,
-    gyro_bias: Vector3,
-    accelerometer_bias: Vector3,
+    gyro_bias: Vector3<f32>,
+    accelerometer_bias: Vector3<f32>,
 }
 
 impl Ov580 {
@@ -346,12 +431,12 @@ impl Ov580 {
         Ok(())
     }
 
-    fn parse_vector(json: &JsonValue) -> Vector3 {
-        Vector3 {
-            x: *json[0].get::<f64>().unwrap() as f32,
-            y: *json[1].get::<f64>().unwrap() as f32,
-            z: *json[2].get::<f64>().unwrap() as f32,
-        }
+    fn parse_vector(json: &JsonValue) -> Vector3<f32> {
+        Vector3::new(
+            *json[0].get::<f64>().unwrap() as f32,
+            *json[1].get::<f64>().unwrap() as f32,
+            *json[2].get::<f64>().unwrap() as f32,
+        )
     }
 
     fn command(&self, cmd: u8, subcmd: u8) -> Result<Vec<u8>> {
