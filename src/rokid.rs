@@ -10,7 +10,10 @@ use std::{io::Cursor, time::Duration};
 use byteorder::{ReadBytesExt, LE};
 use rusb::{request_type, DeviceHandle, GlobalContext};
 
-use crate::{ARGlasses, DisplayMode, GlassesEvent, Result, SensorData3D};
+use crate::{
+    util::get_interface_for_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result,
+    SensorData3D,
+};
 
 /// The main structure representing a connected Rokid Air glasses
 pub struct RokidAir {
@@ -170,23 +173,10 @@ impl RokidAir {
     #[cfg(target_os = "android")]
     pub fn new(fd: isize) -> Result<Self> {
         use rusb::UsbContext;
-
-        use crate::{util::get_interface_for_endpoint, Error};
-
         // Do not scan for devices in libusb_init()
         // This is needed on Android, where access to USB devices is limited
         unsafe { rusb::ffi::libusb_set_option(std::ptr::null_mut(), 2) };
-
         let mut device_handle = unsafe { GlobalContext::default().open_device_with_fd(fd as i32) }?;
-
-        device_handle.set_auto_detach_kernel_driver(true)?;
-
-        device_handle.claim_interface(
-            get_interface_for_endpoint(&device_handle.device(), INTERRUPT_IN_ENDPOINT).ok_or_else(
-                || Error::Other("Could not find endpoint, wrong USB structure (probably)"),
-            )?,
-        )?;
-
         Self::new_common(device_handle)
     }
 
@@ -194,16 +184,19 @@ impl RokidAir {
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        use crate::util::open_device_vid_pid_endpoint;
+        use crate::util::get_device_vid_pid;
 
-        Self::new_common(open_device_vid_pid_endpoint(
-            Self::VID,
-            Self::PID,
-            INTERRUPT_IN_ENDPOINT,
-        )?)
+        Self::new_common(get_device_vid_pid(Self::VID, Self::PID)?.open()?)
     }
 
-    fn new_common(device_handle: DeviceHandle<GlobalContext>) -> Result<Self> {
+    fn new_common(mut device_handle: DeviceHandle<GlobalContext>) -> Result<Self> {
+        device_handle.set_auto_detach_kernel_driver(true)?;
+
+        device_handle.claim_interface(
+            get_interface_for_endpoint(&device_handle.device(), INTERRUPT_IN_ENDPOINT).ok_or_else(
+                || Error::Other("Could not find endpoint, wrong USB structure (probably)"),
+            )?,
+        )?;
         let result = Self {
             device_handle,
             last_accelerometer: None,

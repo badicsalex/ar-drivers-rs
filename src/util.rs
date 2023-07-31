@@ -11,7 +11,7 @@ use crate::{Error, Result};
 
 #[cfg(feature = "rusb")]
 #[cfg(not(target_os = "android"))]
-fn get_device_vid_pid(vid: u16, pid: u16) -> Result<Device<GlobalContext>> {
+pub fn get_device_vid_pid(vid: u16, pid: u16) -> Result<Device<GlobalContext>> {
     for device in DeviceList::new()?.iter() {
         if let Ok(desc) = device.device_descriptor() {
             if desc.vendor_id() == vid && desc.product_id() == pid {
@@ -38,24 +38,6 @@ pub fn get_interface_for_endpoint(
         }
     }
     None
-}
-
-#[cfg(feature = "rusb")]
-#[cfg(not(target_os = "android"))]
-pub fn open_device_vid_pid_endpoint(
-    vid: u16,
-    pid: u16,
-    endpoint_address: u8,
-) -> Result<DeviceHandle<GlobalContext>> {
-    let device = get_device_vid_pid(vid, pid)?;
-    let mut device_handle = device.open()?;
-    device_handle.set_auto_detach_kernel_driver(true)?;
-    device_handle.claim_interface(
-        get_interface_for_endpoint(&device, endpoint_address).ok_or_else(|| {
-            Error::Other("Could not find endpoint, wrong USB structure (probably)")
-        })?,
-    )?;
-    Ok(device_handle)
 }
 
 #[cfg(feature = "nreal")]
