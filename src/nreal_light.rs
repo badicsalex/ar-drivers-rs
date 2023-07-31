@@ -10,7 +10,7 @@
 //! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
 //! every half a second or so)
 
-use std::{collections::VecDeque, io::Write};
+use std::{collections::VecDeque, io::Write, time::Duration};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use hidapi::{HidApi, HidDevice};
@@ -262,7 +262,7 @@ impl NrealLight {
 
     fn send_heartbeat_if_needed(&mut self) -> Result<()> {
         let now = std::time::Instant::now();
-        if now.duration_since(self.last_heartbeat) > std::time::Duration::from_millis(250) {
+        if now.duration_since(self.last_heartbeat) > Duration::from_millis(250) {
             // Heartbeat packet
             // Not sent as "run_command" as sometimes the Glasses don't bother to
             // answer. E.g. when one of the buttons is pressed while it is running.
@@ -565,5 +565,133 @@ impl Packet {
         writer.write_all(&[b':', 3]).ok()?;
         let result = writer.into_inner();
         Some(result)
+    }
+}
+
+/// Structure representing the Nreal Light's OV580 DSP chip's video interface
+pub struct NrealLightSlamCamera {
+    device_handle: rusb::DeviceHandle<rusb::GlobalContext>,
+}
+
+/// One captured Slam camera frame
+pub struct NrealLightSlamCameraFrame {
+    /// Left frame data (640x480 grayscale pixels)
+    pub left: Vec<u8>,
+    /// Right frame data (640x480 grayscale pixels)
+    pub right: Vec<u8>,
+    /// Exact IMU timestamp when this frame was recorded
+    pub timestamp: u64,
+}
+
+impl NrealLightSlamCamera {
+    const VIDEO_INTERFACE: u8 = 1;
+
+    // This was dumped using libuvc. It comes from enumerating the actual, reported
+    // streaming formats, but those are pretty much fixed, so this one can be const too.
+    const ENABLE_STREAMING_PACKET: [u8; 34] = [
+        0x1, 0x0, // bmHint
+        0x1, // bFormatIndex
+        0x1, // bFrameIndex
+        0x15, 0x16, 0x5, 0x0, // bFrameInterval (333333)
+        0x0, 0x0, // wKeyFrameRate
+        0x0, 0x0, // wPFrameRate
+        0x0, 0x0, // wCompQuality
+        0x0, 0x0, // wCompWindowSize
+        0x65, 0x0, // wDelay
+        0x0, 0x65, 0x9, 0x0, // dwMaxVideoFrameSize (615680)
+        0x0, 0x80, 0x0, 0x0, // dwMaxPayloadTransferSize
+        0x80, 0xd1, 0xf0, 0x8,  // dwClockFrequency
+        0x8,  // bmFramingInfo
+        0xf0, // bPreferredVersion
+        0xa9, // bMinVersion
+        0x18, // bMaxVersion
+    ];
+
+    /// Connect to a specific glasses, based on the USB fd
+    /// Mainly made to work around android permission issues
+    #[cfg(target_os = "android")]
+    pub fn new(fd: isize) -> Result<Self> {
+        use rusb::UsbContext;
+        // Do not scan for devices in libusb_init()
+        // This is needed on Android, where access to USB devices is limited
+        unsafe { rusb::ffi::libusb_set_option(std::ptr::null_mut(), 2) };
+        let mut device_handle =
+            unsafe { rusb::GlobalContext::default().open_device_with_fd(fd as i32) }?;
+        Self::new_common(device_handle)
+    }
+
+    /// Find a connected Nreal Light device and connect to its slam camera interface, and start
+    /// streaming video.
+    /// Only one instance can be alive at a time
+    #[cfg(not(target_os = "android"))]
+    pub fn new() -> Result<Self> {
+        use crate::util::get_device_vid_pid;
+        Self::new_common(get_device_vid_pid(NrealLight::OV580_VID, NrealLight::OV580_PID)?.open()?)
+    }
+
+    fn new_common(mut device_handle: rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Self> {
+        const UVC_SET_CUR: u8 = 0x01;
+        const UVC_VS_COMMIT_CONTROL: u16 = 0x02;
+        device_handle.set_auto_detach_kernel_driver(true)?;
+        device_handle.claim_interface(Self::VIDEO_INTERFACE)?;
+        device_handle.write_control(
+            0x21, // USB_TYPE_CLASS	| USB_RECIP_INTERFACE
+            UVC_SET_CUR,
+            UVC_VS_COMMIT_CONTROL << 8,
+            1,
+            Self::ENABLE_STREAMING_PACKET.as_slice(),
+            Duration::from_secs(1),
+        )?;
+        let result = Self { device_handle };
+        Ok(result)
+    }
+
+    /// Get a single frame from the device. timeout == ZERO means "infinite" timeout.
+    pub fn get_frame(&mut self, timeout: Duration) -> Result<NrealLightSlamCameraFrame> {
+        let mut bulk_data = vec![0; 615908 * 2];
+        let started = std::time::Instant::now();
+        loop {
+            let actual_timeout = timeout.saturating_sub(started.elapsed());
+            if actual_timeout.is_zero() {
+                return Err(Error::PacketTimeout);
+            }
+            let recvd = self
+                .device_handle
+                .read_bulk(0x81, &mut bulk_data, timeout)?;
+            if recvd == 615908 && bulk_data[0] != 0 {
+                bulk_data.truncate(recvd);
+                break;
+            }
+        }
+
+        // Throw away headers that occur every 0x8000 (max transfer size)
+        let mut read_index = 0;
+        let mut write_index = 0;
+        while read_index < bulk_data.len() {
+            let header_size = bulk_data[read_index];
+            read_index += header_size as usize;
+            let len = 0x8000 - read_index % 0x8000;
+            let read_end = (read_index + len).min(bulk_data.len());
+
+            bulk_data.copy_within(read_index..read_end, write_index);
+            read_index += len;
+            write_index += len;
+        }
+        bulk_data.truncate(write_index);
+
+        let mut left = Vec::with_capacity(640 * 480);
+        let mut right = Vec::with_capacity(640 * 480);
+        for i in 0..480 {
+            left.extend_from_slice(&bulk_data[(i * 2) * 640..(i * 2 + 1) * 640]);
+            right.extend_from_slice(&bulk_data[(i * 2 + 1) * 640..(i * 2 + 2) * 640]);
+        }
+        let timestamp = u64::from_le_bytes(bulk_data[640 * 480 * 2..640 * 480 * 2 + 8].try_into().unwrap()) / 1000
+            // As seen in the nreal protocol json
+            + 37600;
+        Ok(NrealLightSlamCameraFrame {
+            left,
+            right,
+            timestamp,
+        })
     }
 }
