@@ -357,7 +357,10 @@ impl NrealLight {
             distortion: self.get_config_float_array(&[k1, k2, "kc"])?.0[0],
             stereo_rotation: Default::default(),
             imu_to_camera: if let (Ok(p), Ok(q)) = (imu_p_cam, imu_q_cam) {
-                Isometry3::from_parts(p.into(), q)
+                let mut q = q.into_inner();
+                q.j = -q.j;
+                q.k = -q.k;
+                Isometry3::from_parts(p.into(), UnitQuaternion::from_quaternion(q))
             } else {
                 Default::default()
             },
