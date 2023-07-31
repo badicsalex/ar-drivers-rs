@@ -112,9 +112,9 @@ impl ARGlasses for NrealLight {
     fn cameras(&self) -> Result<Vec<crate::CameraDescriptor>> {
         let rgb = self.get_basic_camera_descriptor("rgb", "RGB_camera", "device_1")?;
         let slam_left =
-            self.get_basic_camera_descriptor("Nreal Light SLAM left", "SLAM_camera", "device_1")?;
+            self.get_basic_camera_descriptor(Self::LEFT_SLAM_CAM, "SLAM_camera", "device_1")?;
         let mut slam_right =
-            self.get_basic_camera_descriptor("Nreal Light SLAM right", "SLAM_camera", "device_2")?;
+            self.get_basic_camera_descriptor(Self::RIGHT_SLAM_CAM, "SLAM_camera", "device_2")?;
         slam_right.stereo_rotation = self
             .get_config_float_array(&["SLAM_camera", "leftcam_q_rightcam"])
             .map(Vector4::from_data)
@@ -136,6 +136,11 @@ impl NrealLight {
     pub const OV580_VID: u16 = 0x05a9;
     /// Product ID of the NReal Light's OV580 camera (and IMU)
     pub const OV580_PID: u16 = 0x0680;
+
+    /// Unique camera type name for the left SLAM camera
+    pub const LEFT_SLAM_CAM: &str = "Nreal Light SLAM left";
+    /// Unique camera type name for the right SLAM camera
+    pub const RIGHT_SLAM_CAM: &str = "Nreal Light SLAM right";
 
     /// Connect to a specific glasses, based on the two USB fds
     /// Mainly made to work around android permission issues
