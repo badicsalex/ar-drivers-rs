@@ -117,6 +117,11 @@ impl ARGlasses for MadGazeGlow {
     fn name(&self) -> &'static str {
         "Mad Gaze Glow"
     }
+
+    fn display_delay(&self) -> u64 {
+        // TODO: never actuallz calibrated
+        15000
+    }
 }
 
 const AK09911_ADDRESS: u8 = 12;

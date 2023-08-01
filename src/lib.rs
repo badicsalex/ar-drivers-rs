@@ -197,6 +197,11 @@ pub trait ARGlasses: Send {
     fn cameras(&self) -> Result<Vec<CameraDescriptor>> {
         Ok(Vec::new())
     }
+    /// The additional delay (in usecs) of the glasses' display from getting the data
+    /// on DisplayPort. This is not really an absolute value, but more of
+    /// a relative measure between different glasses.
+    /// In the future this may depend on the current display mode.
+    fn display_delay(&self) -> u64;
 }
 
 /// Represents one built-in camera

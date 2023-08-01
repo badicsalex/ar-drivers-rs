@@ -135,6 +135,10 @@ impl ARGlasses for NrealLight {
 
         Ok(vec![rgb, slam_left, slam_right])
     }
+
+    fn display_delay(&self) -> u64 {
+        17000
+    }
 }
 
 impl NrealLight {

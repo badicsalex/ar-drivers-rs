@@ -177,6 +177,10 @@ impl ARGlasses for RokidAir {
     fn name(&self) -> &'static str {
         "Rokid Air"
     }
+
+    fn display_delay(&self) -> u64 {
+        15000
+    }
 }
 
 impl RokidAir {

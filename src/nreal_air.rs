@@ -112,6 +112,10 @@ impl ARGlasses for NrealAir {
             )
     }
 
+    fn display_delay(&self) -> u64 {
+        7000
+    }
+
     fn name(&self) -> &'static str {
         "Nreal Air"
     }
