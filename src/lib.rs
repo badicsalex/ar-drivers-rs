@@ -34,8 +34,7 @@
 //! All of them are enabled by default, which may bring in some unwanted dependencies if you
 //! only want to support a specific type.
 
-#[cfg(feature = "nalgebra")]
-use nalgebra::{Isometry3, Matrix3, UnitQuaternion, Vector2};
+use nalgebra::{Isometry3, Matrix3, UnitQuaternion, Vector2, Vector3};
 
 #[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
@@ -107,19 +106,32 @@ impl std::fmt::Display for Error {
 }
 
 /// AR glasses sensor event, got from [`ARGlasses::read_event`]
+///
+/// Coordinate system is "RUB": Positive X is Right, Positive Y is Up, Positive Z is backwards.
+/// This is the same as the Android sensor coordinate system.
 #[derive(Debug, Clone)]
 pub enum GlassesEvent {
     /// Synchronized accelerometer and gyroscope data.
-    /// The timestamps are guaranteed to be the same.
     AccGyro {
-        /// Accelerometer data in m^2/s
-        accelerometer: SensorData3D,
+        /// Accelerometer data in m^2/s.
+        ///
+        /// Remember that while gravitational acceleration is "down", the acceleration
+        /// the device "feels" is the one opposite from that, so the normal reading
+        /// when the device is upright is (0, 9.81, 0)
+        accelerometer: Vector3<f32>,
         /// Gyroscope data. Right handed rotation in rad/sec,
         /// e.g. turning left is positive y axis.
-        gyroscope: SensorData3D,
+        gyroscope: Vector3<f32>,
+        /// Timestamp, in device time, in microseconds
+        timestamp: u64,
     },
-    /// Magnetometer data. Vector points to magnetic north (mostly)
-    Magnetometer(SensorData3D),
+    /// Magnetometer data.
+    Magnetometer {
+        /// Direction of magnetic north (more or less). Unit is uT.
+        magnetometer: Vector3<f32>,
+        /// Timestamp, in device time, in microseconds
+        timestamp: u64,
+    },
     /// A key was pressed (sent once per press)
     /// The number is a key ID, starting from 0.
     KeyPress(u8),
@@ -137,19 +149,6 @@ pub enum GlassesEvent {
     VSync,
 }
 
-/// Structure to hold a typical 3D sensor value (accelerometer, gyroscope, magnetomer)
-#[derive(Debug, Clone)]
-pub struct SensorData3D {
-    /// Timestamp, in device time, in microseconds
-    pub timestamp: u64,
-    /// Sensor value in the X coordinate. Positive is Right.
-    pub x: f32,
-    /// Sensor value in the Y coordinate. Positive is Up.
-    pub y: f32,
-    /// Sensor value in the Z coordinate. Positive is Backwards.
-    pub z: f32,
-}
-
 /// Display mode used by [`ARGlasses::set_display_mode`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
@@ -165,6 +164,15 @@ pub enum DisplayMode {
     HighRefreshRate = 3,
 }
 
+/// Display side used by [`ARGlasses::view_matrix`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// Left display
+    Left,
+    /// Right display
+    Right,
+}
+
 /// Common interface for AR implemented glasses
 pub trait ARGlasses: Send {
     /// Get the serial number of the glasses
@@ -177,12 +185,13 @@ pub trait ARGlasses: Send {
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()>;
     /// Field of view of the display along the horizontal axis, in radians
     fn display_fov(&self) -> f32;
-    /// Tilt of the display compared to the IMU readings, in radians. Positive means tilted up.
-    fn display_tilt(&self) -> f32;
+    /// Transformation from IMU frame to display frame, at the specified
+    /// IPD (interpupillary distance). The `ipd` parameter is in meters.
+    /// A typical value is 0.07.
+    fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64>;
     /// Name of the device
     fn name(&self) -> &'static str;
     /// Get built-in camera descriptors
-    #[cfg(feature = "nalgebra")]
     fn cameras(&self) -> Result<Vec<CameraDescriptor>> {
         Ok(Vec::new())
     }
@@ -191,7 +200,6 @@ pub trait ARGlasses: Send {
 /// Represents one built-in camera
 ///
 /// Warning: Experimental. May change between any versions.
-#[cfg(feature = "nalgebra")]
 #[derive(Debug, Clone)]
 pub struct CameraDescriptor {
     /// The unique name for the type of the camera.

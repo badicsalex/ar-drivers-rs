@@ -91,21 +91,3 @@ pub(crate) fn crc32_adler(buf: &[u8]) -> u32 {
 
     r ^ 0xffffffffu32
 }
-
-#[cfg(feature = "nalgebra")]
-pub(crate) use nalgebra::Vector3;
-
-#[cfg(not(feature = "nalgebra"))]
-#[derive(Debug, Default, Clone)]
-pub(crate) struct Vector3<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-}
-
-#[cfg(not(feature = "nalgebra"))]
-impl<T> Vector3<T> {
-    pub fn new(x: T, y: T, z: T) -> Self {
-        Self { x, y, z }
-    }
-}

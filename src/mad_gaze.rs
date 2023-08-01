@@ -8,9 +8,10 @@
 use std::{collections::VecDeque, io::Seek, thread::sleep, time::Duration};
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
 use serialport::{SerialPort, SerialPortType, UsbPortInfo};
 
-use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D};
+use crate::{ARGlasses, DisplayMode, Error, GlassesEvent, Result, Side};
 
 /*
         Sensor axes:
@@ -99,8 +100,13 @@ impl ARGlasses for MadGazeGlow {
         23.5f32.to_radians()
     }
 
-    fn display_tilt(&self) -> f32 {
-        0.12
+    fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
+        let ipd = ipd as f64
+            * match side {
+                Side::Left => -0.5,
+                Side::Right => 0.5,
+            };
+        Translation3::new(ipd, 0.0, 0.0) * UnitQuaternion::from_euler_angles(0.12, 0.0, 0.0)
     }
 
     fn name(&self) -> &'static str {
@@ -195,13 +201,14 @@ impl MadGazeGlow {
         let axis1 = reader.read_i16::<LittleEndian>()?;
         let axis2 = reader.read_i16::<LittleEndian>()?;
         let axis3 = reader.read_i16::<LittleEndian>()?;
-        self.pending_events
-            .push_back(GlassesEvent::Magnetometer(SensorData3D {
-                timestamp: self.timestamp,
-                x: -axis1 as f32 * AK09911_LSB_TO_UT,
-                y: axis2 as f32 * AK09911_LSB_TO_UT,
-                z: -axis3 as f32 * AK09911_LSB_TO_UT,
-            }));
+        self.pending_events.push_back(GlassesEvent::Magnetometer {
+            magnetometer: Vector3::new(
+                -axis1 as f32 * AK09911_LSB_TO_UT,
+                axis2 as f32 * AK09911_LSB_TO_UT,
+                -axis3 as f32 * AK09911_LSB_TO_UT,
+            ),
+            timestamp: self.timestamp,
+        });
         Ok(())
     }
 
@@ -242,18 +249,17 @@ impl MadGazeGlow {
                 break;
             }
             self.pending_events.push_back(GlassesEvent::AccGyro {
-                accelerometer: SensorData3D {
-                    timestamp: self.timestamp,
-                    x: gyro_axis2 as f32 * GYRO_UNIT,
-                    y: -gyro_axis3 as f32 * GYRO_UNIT,
-                    z: -gyro_axis1 as f32 * GYRO_UNIT,
-                },
-                gyroscope: SensorData3D {
-                    timestamp: self.timestamp,
-                    x: acc_axis2 as f32 * ACC_UNIT,
-                    y: -acc_axis3 as f32 * ACC_UNIT,
-                    z: -acc_axis1 as f32 * ACC_UNIT,
-                },
+                accelerometer: Vector3::new(
+                    gyro_axis2 as f32 * GYRO_UNIT,
+                    -gyro_axis3 as f32 * GYRO_UNIT,
+                    -gyro_axis1 as f32 * GYRO_UNIT,
+                ),
+                gyroscope: Vector3::new(
+                    acc_axis2 as f32 * ACC_UNIT,
+                    -acc_axis3 as f32 * ACC_UNIT,
+                    -acc_axis1 as f32 * ACC_UNIT,
+                ),
+                timestamp: self.timestamp,
             });
             // TODO: This is a big hack and should be read from the IMU
             // Then again, the IMU should fill its FIFO with this period,

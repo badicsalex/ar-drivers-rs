@@ -10,19 +10,21 @@
 //! [`NrealLight::read_event`] is called, so be sure to constantly call that function (at least once
 //! every half a second or so)
 
-use std::{collections::VecDeque, io::Write, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::Write,
+    time::Duration,
+};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use hidapi::{HidApi, HidDevice};
-#[cfg(feature = "nalgebra")]
-use nalgebra::{Isometry3, Matrix3, Quaternion, UnitQuaternion, Vector2, Vector4};
+use nalgebra::{
+    Isometry3, Matrix3, Quaternion, Translation3, UnitQuaternion, Vector2, Vector3, Vector4,
+};
 use tinyjson::JsonValue;
 
-#[cfg(feature = "nalgebra")]
-use crate::CameraDescriptor;
 use crate::{
-    util::{crc32_adler, Vector3},
-    ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D,
+    util::crc32_adler, ARGlasses, CameraDescriptor, DisplayMode, Error, GlassesEvent, Result, Side,
 };
 
 /// The main structure representing a connected Nreal Light glasses
@@ -100,15 +102,23 @@ impl ARGlasses for NrealLight {
         25.0f32.to_radians()
     }
 
-    fn display_tilt(&self) -> f32 {
-        -0.265
+    fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
+        let side_multiplier = match side {
+            Side::Left => -0.5,
+            Side::Right => 0.5,
+        };
+        Translation3::new(ipd as f64 * side_multiplier, 0.0, 0.0)
+            * UnitQuaternion::from_euler_angles(
+                Self::DISPLAY_TILT,
+                Self::DISPLAY_DIVERGENCE * side_multiplier,
+                0.0,
+            )
     }
 
     fn name(&self) -> &'static str {
         "Nreal Light"
     }
 
-    #[cfg(feature = "nalgebra")]
     fn cameras(&self) -> Result<Vec<crate::CameraDescriptor>> {
         let rgb = self.get_basic_camera_descriptor("rgb", "RGB_camera", "device_1")?;
         let slam_left =
@@ -142,6 +152,8 @@ impl NrealLight {
     /// Unique camera type name for the right SLAM camera
     pub const RIGHT_SLAM_CAM: &str = "Nreal Light SLAM right";
 
+    const DISPLAY_TILT: f64 = -0.265;
+    const DISPLAY_DIVERGENCE: f64 = 0.02;
     /// Connect to a specific glasses, based on the two USB fds
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
@@ -300,13 +312,10 @@ impl NrealLight {
         Err(Error::Other("Received too many unrelated packets"))
     }
 
-    #[cfg(feature = "nalgebra")]
     fn get_config_float_array<const N: usize>(
         &self,
         keys: &[&str],
     ) -> Result<nalgebra::ArrayStorage<f64, N, 1>> {
-        use std::collections::HashMap;
-
         let mut result = [0.0; N];
         let mut json_val = self.get_config_json();
         for key in keys {
@@ -330,7 +339,6 @@ impl NrealLight {
         Ok(nalgebra::ArrayStorage([result]))
     }
 
-    #[cfg(feature = "nalgebra")]
     fn get_basic_camera_descriptor(
         &self,
         name: &'static str,
@@ -487,28 +495,27 @@ impl Ov580 {
         let gyro_x = reader.read_i32::<LittleEndian>()? as f32;
         let gyro_y = reader.read_i32::<LittleEndian>()? as f32;
         let gyro_z = reader.read_i32::<LittleEndian>()? as f32;
-        let gyroscope = SensorData3D {
-            timestamp: gyro_timestamp,
-            x: (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias.x,
-            y: -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias.y,
-            z: -(gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias.z,
-        };
+        let gyroscope = Vector3::new(
+            (gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias.x,
+            -(gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias.y,
+            -(gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias.z,
+        );
 
-        let acc_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
+        let _acc_timestamp = reader.read_u64::<LittleEndian>()? / 1000;
         let acc_mul = reader.read_u32::<LittleEndian>()? as f32;
         let acc_div = reader.read_u32::<LittleEndian>()? as f32;
         let acc_x = reader.read_i32::<LittleEndian>()? as f32;
         let acc_y = reader.read_i32::<LittleEndian>()? as f32;
         let acc_z = reader.read_i32::<LittleEndian>()? as f32;
-        let accelerometer = SensorData3D {
-            timestamp: acc_timestamp,
-            x: (acc_x * acc_mul / acc_div) * 9.81 - self.accelerometer_bias.x,
-            y: -(acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
-            z: -(acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
-        };
+        let accelerometer = Vector3::new(
+            (acc_x * acc_mul / acc_div) * 9.81 - self.accelerometer_bias.x,
+            -(acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
+            -(acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
+        );
         Ok(GlassesEvent::AccGyro {
             accelerometer,
             gyroscope,
+            timestamp: gyro_timestamp,
         })
     }
 }

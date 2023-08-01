@@ -13,7 +13,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["mad_gaze", "rokid", "nreal", "nalgebra"]
+default = ["mad_gaze", "rokid", "nreal"]
 rokid = ["rusb"]
 nreal = ["hidapi", "tinyjson", "bytemuck"]
 mad_gaze = ["serialport"]
@@ -21,7 +21,7 @@ mad_gaze = ["serialport"]
 [dependencies]
 bytemuck = { version = "1.13.1", optional = true }
 byteorder = "1.4"
-nalgebra = { version = "0.32.3", default-features=false, features = ["std"], optional = true }
+nalgebra = { version = "0.32.3", default-features=false, features = ["std"]}
 rusb = { version = "0.9.1", optional = true }
 serialport = { version = "4.2", optional = true }
 tinyjson = { version = "2.5.1", optional = true }

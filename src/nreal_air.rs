@@ -12,12 +12,10 @@ use std::collections::VecDeque;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use hidapi::{HidApi, HidDevice};
+use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
 use tinyjson::JsonValue;
 
-use crate::{
-    util::{crc32_adler, Vector3},
-    ARGlasses, DisplayMode, Error, GlassesEvent, Result, SensorData3D,
-};
+use crate::{util::crc32_adler, ARGlasses, DisplayMode, Error, GlassesEvent, Result, Side};
 
 /// The main structure representing a connected Nreal Air glasses
 pub struct NrealAir {
@@ -99,9 +97,18 @@ impl ARGlasses for NrealAir {
         24.0f32.to_radians()
     }
 
-    fn display_tilt(&self) -> f32 {
-        // Apparently it is very well aligned.
-        0.0
+    fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
+        let side_multiplier = match side {
+            Side::Left => -0.5,
+            Side::Right => 0.5,
+        };
+        Translation3::new(ipd as f64 * side_multiplier, 0.0, 0.0)
+            * UnitQuaternion::from_euler_angles(
+                // Apparently there is no noticable tilt
+                0.0,
+                Self::DISPLAY_DIVERGENCE * side_multiplier,
+                0.0,
+            )
     }
 
     fn name(&self) -> &'static str {
@@ -114,6 +121,8 @@ impl NrealAir {
     pub const VID: u16 = 0x3318;
     /// Product ID of the NReal Air's components
     pub const PID: u16 = 0x0424;
+
+    const DISPLAY_DIVERGENCE: f64 = 0.017;
 
     /// Connect to a specific glasses, based on the
     /// Mainly made to work around android permission issues
@@ -324,34 +333,33 @@ impl ImuDevice {
         let gyro_x = reader.read_i24::<LittleEndian>()? as f32;
         let gyro_y = reader.read_i24::<LittleEndian>()? as f32;
         let gyro_z = reader.read_i24::<LittleEndian>()? as f32;
-        let gyroscope = SensorData3D {
-            timestamp,
+        let gyroscope = Vector3::new(
             // The bias fields do not correspond to the raw fields, but for some reason
             // this looks like the correct zero.
-            x: -(gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias.x,
-            y: (gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias.y,
-            z: (gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias.z,
-        };
+            -(gyro_x * gyro_mul / gyro_div).to_radians() - self.gyro_bias.x,
+            (gyro_z * gyro_mul / gyro_div).to_radians() + self.gyro_bias.y,
+            (gyro_y * gyro_mul / gyro_div).to_radians() + self.gyro_bias.z,
+        );
 
         let acc_mul = reader.read_u16::<LittleEndian>()? as f32;
         let acc_div = reader.read_u32::<LittleEndian>()? as f32;
         let acc_x = reader.read_i24::<LittleEndian>()? as f32;
         let acc_y = reader.read_i24::<LittleEndian>()? as f32;
         let acc_z = reader.read_i24::<LittleEndian>()? as f32;
-        let accelerometer = SensorData3D {
-            timestamp,
+        let accelerometer = Vector3::new(
             // The bias fields do not correspond to the raw fields, but for some reason
             // this looks like the correct zero.
-            x: -(acc_x * acc_mul / acc_div) * 9.81 - self.accelerometer_bias.x,
-            y: (acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
-            z: (acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
-        };
+            -(acc_x * acc_mul / acc_div) * 9.81 - self.accelerometer_bias.x,
+            (acc_z * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.y,
+            (acc_y * acc_mul / acc_div) * 9.81 + self.accelerometer_bias.z,
+        );
         // TODO: magnetometer. It's in the same format, but it's non-trivially
         //       rotated.
         // TODO: Check checksum
         Ok(GlassesEvent::AccGyro {
             accelerometer,
             gyroscope,
+            timestamp,
         })
     }
 }

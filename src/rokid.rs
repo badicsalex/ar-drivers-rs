@@ -8,18 +8,18 @@
 use std::{io::Cursor, time::Duration};
 
 use byteorder::{ReadBytesExt, LE};
+use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
 use rusb::{request_type, DeviceHandle, GlobalContext};
 
 use crate::{
-    util::get_interface_for_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result,
-    SensorData3D,
+    util::get_interface_for_endpoint, ARGlasses, DisplayMode, Error, GlassesEvent, Result, Side,
 };
 
 /// The main structure representing a connected Rokid Air glasses
 pub struct RokidAir {
     device_handle: DeviceHandle<GlobalContext>,
-    last_accelerometer: Option<SensorData3D>,
-    last_gyroscope: Option<SensorData3D>,
+    last_accelerometer: Option<(Vector3<f32>, u64)>,
+    last_gyroscope: Option<(Vector3<f32>, u64)>,
     key_was_pressed: bool,
     proxy_sensor_was_far: bool,
 }
@@ -84,23 +84,29 @@ impl ARGlasses for RokidAir {
                 let x = cursor.read_f32::<LE>().unwrap();
                 let y = cursor.read_f32::<LE>().unwrap();
                 let z = cursor.read_f32::<LE>().unwrap();
-                let sensor_data = SensorData3D { timestamp, x, y, z };
+                let sensor_data = Vector3::new(x, y, z);
                 match result[1] {
-                    1 => self.last_accelerometer = Some(sensor_data),
-                    2 => self.last_gyroscope = Some(sensor_data),
+                    1 => self.last_accelerometer = Some((sensor_data, timestamp)),
+                    2 => self.last_gyroscope = Some((sensor_data, timestamp)),
                     // TODO: Magnetometer apparently gives an accuracy value too
-                    3 => return Ok(GlassesEvent::Magnetometer(sensor_data)),
+                    3 => {
+                        return Ok(GlassesEvent::Magnetometer {
+                            magnetometer: sensor_data,
+                            timestamp,
+                        })
+                    }
                     _ => (),
                 }
-                if let (Some(accelerometer), Some(gyroscope)) =
-                    (self.last_accelerometer.clone(), self.last_gyroscope.clone())
+                if let (Some((accelerometer, acc_ts)), Some((gyroscope, gyro_ts))) =
+                    (self.last_accelerometer, self.last_gyroscope)
                 {
-                    if accelerometer.timestamp == gyroscope.timestamp {
+                    if acc_ts == gyro_ts {
                         self.last_gyroscope = None;
                         self.last_accelerometer = None;
                         return Ok(GlassesEvent::AccGyro {
                             accelerometer,
                             gyroscope,
+                            timestamp: acc_ts,
                         });
                     }
                 }
@@ -153,8 +159,13 @@ impl ARGlasses for RokidAir {
         20f32.to_radians()
     }
 
-    fn display_tilt(&self) -> f32 {
-        0.022
+    fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
+        let ipd = ipd as f64
+            * match side {
+                Side::Left => -0.5,
+                Side::Right => 0.5,
+            };
+        Translation3::new(ipd, 0.0, 0.0) * UnitQuaternion::from_euler_angles(0.022, 0.0, 0.0)
     }
 
     fn name(&self) -> &'static str {

@@ -19,10 +19,11 @@ fn main() {
         if let GlassesEvent::AccGyro {
             accelerometer,
             gyroscope,
+            ..
         } = glasses.read_event().unwrap()
         {
-            acc_sum += Vector3::new(accelerometer.x, accelerometer.y, accelerometer.z);
-            gyro_sum += Vector3::new(gyroscope.x, gyroscope.y, gyroscope.z);
+            acc_sum += accelerometer;
+            gyro_sum += gyroscope;
             n += 1;
             if last_print.elapsed() > Duration::from_secs(1) {
                 println!(
