@@ -138,6 +138,12 @@ impl ARGlasses for RokidAir {
     }
 
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
+        let display_mode = match display_mode {
+            DisplayMode::SameOnBoth => 0,
+            DisplayMode::Stereo => 1,
+            DisplayMode::HighRefreshRate => 3,
+            _ => return Err(Error::Other("Display mode not supported")),
+        };
         self.device_handle.write_control(
             request_type(
                 rusb::Direction::Out,
@@ -145,7 +151,7 @@ impl ARGlasses for RokidAir {
                 rusb::Recipient::Device,
             ),
             0x1,
-            display_mode as u16,
+            display_mode,
             0x1,
             &[0u8; 1],
             TIMEOUT,

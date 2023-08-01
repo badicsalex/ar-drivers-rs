@@ -77,6 +77,7 @@ impl ARGlasses for NrealAir {
             DisplayMode::HalfSBS => 8,
             DisplayMode::Stereo => 3,
             DisplayMode::HighRefreshRate => 11,
+            DisplayMode::HighRefreshRateSBS => 9,
         };
         let result = self.run_command(McuPacket {
             cmd_id: 0x08,

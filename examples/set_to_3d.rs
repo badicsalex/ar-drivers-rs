@@ -22,19 +22,22 @@ struct CliArgs {
 enum CliDisplayMode {
     /// Picture should be same for both eyes (simple full HD mode)
     #[value(name("2d"), alias("same-on-both"))]
-    SameOnBoth = 0,
+    SameOnBoth,
     /// Set display to 3840*1080 or 3840*1200,
     /// where the left half is the left eye, the right half is the right eye
     #[value(name("3d"), alias("sbs"), alias("stereo"))]
-    Stereo = 1,
+    Stereo,
     /// Set display to half-SBS mode, which presents itself as 1920*1080 resolution,
     /// but actually scales down everything to 960x540,then upscales to 3840x1080
     // "sbs2" matches how half-SBS referred to in stereo3d filter in mpv player
     #[value(name("halfsbs"), alias("sbs2"), alias("half-stereo"))]
-    HalfSBS = 2,
-    /// Set display to high refresh rate mode (120Hz in case of Rokid, 72Hz with Nreal)
-    #[value(name("120hz"), alias("high-refresh-rate"))]
-    HighRefreshRate = 3,
+    HalfSBS,
+    /// Set display to high refresh rate mode (120Hz in most cases)
+    #[value(name("high-refresh-rate-2d"), alias("120hz"))]
+    HighRefreshRate,
+    /// Set display to high refresh rate SBS (90Hz on the Nreal Air)
+    #[value(name("high-refresh-rate-3d"))]
+    HighRefreshRateSBS,
 }
 
 fn main() {
@@ -52,6 +55,7 @@ fn main() {
             CliDisplayMode::Stereo => DisplayMode::Stereo,
             CliDisplayMode::HalfSBS => DisplayMode::HalfSBS,
             CliDisplayMode::HighRefreshRate => DisplayMode::HighRefreshRate,
+            CliDisplayMode::HighRefreshRateSBS => DisplayMode::HighRefreshRateSBS,
         })
         .unwrap();
 
