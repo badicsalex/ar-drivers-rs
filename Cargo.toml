@@ -22,17 +22,17 @@ mad_gaze = ["serialport"]
 bytemuck = { version = "1.13.1", optional = true }
 byteorder = "1.4"
 nalgebra = { version = "0.32.3", default-features=false, features = ["std"]}
-rusb = { version = "0.9.1", optional = true }
+rusb = { version = "0.9.2", optional = true }
 serialport = { version = "4.2", optional = true }
 tinyjson = { version = "2.5.1", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
-hidapi = { version = "2.2.2", default-features=false, features = [ "linux-static-libusb" ], optional = true }
+hidapi = { version = "2.4.1", default-features=false, features = [ "linux-static-libusb" ], optional = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-hidapi = { version = "2.2.2", optional = true }
+hidapi = { version = "2.4.1", optional = true }
 
 
 [dev-dependencies]
-clap = { version = "4.2", features = ["derive"] }
+clap = { version = "4.3", features = ["derive"] }
 opencv = { version = "0.84.2", default-features = false, features = ["highgui", "imgproc", "calib3d"] }
