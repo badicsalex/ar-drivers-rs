@@ -586,6 +586,7 @@ pub struct NrealLightSlamCamera {
 }
 
 /// One captured Slam camera frame
+#[derive(Debug, Clone)]
 pub struct NrealLightSlamCameraFrame {
     /// Left frame data (640x480 grayscale pixels)
     pub left: Vec<u8>,
