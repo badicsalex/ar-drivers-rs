@@ -471,6 +471,7 @@ impl ImuPacket {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn open_vid_pid_endpoint(vid: u16, pid: u16, interface: i32) -> Result<HidDevice> {
     let hidapi = HidApi::new()?;
     for device in hidapi.device_list() {

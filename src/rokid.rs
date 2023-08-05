@@ -197,7 +197,7 @@ impl RokidAir {
         // Do not scan for devices in libusb_init()
         // This is needed on Android, where access to USB devices is limited
         unsafe { rusb::ffi::libusb_set_option(std::ptr::null_mut(), 2) };
-        let mut device_handle = unsafe { GlobalContext::default().open_device_with_fd(fd as i32) }?;
+        let device_handle = unsafe { GlobalContext::default().open_device_with_fd(fd as i32) }?;
         Self::new_common(device_handle)
     }
 
