@@ -100,7 +100,7 @@ impl ARGlasses for NrealLight {
     fn display_fov(&self) -> f32 {
         // 24.0° is the advertised FOV
         // According to measurements, it is even a bit better
-        25.0f32.to_radians()
+        26.0f32.to_radians()
     }
 
     fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
@@ -137,7 +137,7 @@ impl ARGlasses for NrealLight {
     }
 
     fn display_delay(&self) -> u64 {
-        17000
+        15500
     }
 }
 
