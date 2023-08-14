@@ -5,9 +5,8 @@
 //! Rokid Air AR glasses support. See [`RokidAir`]
 //! It only uses [`rusb`] for communication.
 
-use std::{io::Cursor, time::Duration};
+use std::{collections::VecDeque, time::Duration};
 
-use byteorder::{ReadBytesExt, LE};
 use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
 use rusb::{request_type, DeviceHandle, GlobalContext};
 
@@ -20,8 +19,15 @@ pub struct RokidAir {
     device_handle: DeviceHandle<GlobalContext>,
     last_accelerometer: Option<(Vector3<f32>, u64)>,
     last_gyroscope: Option<(Vector3<f32>, u64)>,
-    key_was_pressed: bool,
+    previous_key_states: u8,
     proxy_sensor_was_far: bool,
+    pending_events: VecDeque<GlassesEvent>,
+    model: RokidModel,
+}
+
+enum RokidModel {
+    Air,
+    Max,
 }
 
 /* This is actually hardcoded in the SDK too, except for PID==0x162d, where it's 0x83 */
@@ -51,67 +57,70 @@ impl ARGlasses for RokidAir {
     }
 
     fn read_event(&mut self) -> Result<GlassesEvent> {
-        loop {
-            let mut result = [0u8; 0x40];
+        while self.pending_events.is_empty() {
+            let mut packet_data = [0u8; 0x40];
             self.device_handle
-                .read_interrupt(INTERRUPT_IN_ENDPOINT, &mut result, TIMEOUT)?;
-            if result[0] == 2 {
-                //eprintln!("{result:?}");
-                let key_is_pressed = result[47] != 0;
-                let send_key_event = key_is_pressed && !self.key_was_pressed;
-                self.key_was_pressed = key_is_pressed;
-                if send_key_event {
-                    // We will lose the Proxy sensor "event" here,
-                    // but we will get it in the next iteration soon.
-                    return Ok(GlassesEvent::KeyPress(0));
+                .read_interrupt(INTERRUPT_IN_ENDPOINT, &mut packet_data, TIMEOUT)?;
+            match packet_data[0] {
+                2 => {
+                    let packet: &MiscPacket = bytemuck::cast_ref(&packet_data);
+                    self.handle_key_press(packet.keys_pressed);
+                    self.handle_proxy_sensor(packet.proxy_sensor);
                 }
-                let proxy_sensor_is_far = result[51] != 0;
-                let send_proxy_event = proxy_sensor_is_far != self.proxy_sensor_was_far;
-                self.proxy_sensor_was_far = proxy_sensor_is_far;
-                if send_proxy_event {
-                    return Ok(if proxy_sensor_is_far {
-                        GlassesEvent::ProximityFar
-                    } else {
-                        GlassesEvent::ProximityNear
-                    });
-                }
-            }
-            if result[0] == 4 {
-                let mut cursor = Cursor::new(&result);
-                cursor.set_position(9);
-                let timestamp = cursor.read_u64::<LE>().unwrap();
-                cursor.set_position(21);
-                let x = cursor.read_f32::<LE>().unwrap();
-                let y = cursor.read_f32::<LE>().unwrap();
-                let z = cursor.read_f32::<LE>().unwrap();
-                let sensor_data = Vector3::new(x, y, z);
-                match result[1] {
-                    1 => self.last_accelerometer = Some((sensor_data, timestamp)),
-                    2 => self.last_gyroscope = Some((sensor_data, timestamp)),
-                    // TODO: Magnetometer apparently gives an accuracy value too
-                    3 => {
-                        return Ok(GlassesEvent::Magnetometer {
+                4 => {
+                    let packet: &SensorPacket = bytemuck::cast_ref(&packet_data);
+                    let sensor_data =
+                        Vector3::from_data(nalgebra::ArrayStorage([packet.vector; 1]));
+                    match packet.sensor_type {
+                        1 => self.last_accelerometer = Some((sensor_data, packet.timestamp)),
+                        2 => self.last_gyroscope = Some((sensor_data, packet.timestamp)),
+                        // TODO: Magnetometer apparently gives an accuracy value too
+                        3 => self.pending_events.push_back(GlassesEvent::Magnetometer {
                             magnetometer: sensor_data,
-                            timestamp,
-                        })
+                            timestamp: packet.timestamp,
+                        }),
+                        _ => (),
                     }
-                    _ => (),
-                }
-                if let (Some((accelerometer, acc_ts)), Some((gyroscope, gyro_ts))) =
-                    (self.last_accelerometer, self.last_gyroscope)
-                {
-                    if acc_ts == gyro_ts {
-                        self.last_gyroscope = None;
-                        self.last_accelerometer = None;
-                        return Ok(GlassesEvent::AccGyro {
-                            accelerometer,
-                            gyroscope,
-                            timestamp: acc_ts,
-                        });
+                    if let (Some((accelerometer, acc_ts)), Some((gyroscope, gyro_ts))) =
+                        (self.last_accelerometer, self.last_gyroscope)
+                    {
+                        if acc_ts == gyro_ts {
+                            self.last_gyroscope = None;
+                            self.last_accelerometer = None;
+                            self.pending_events.push_back(GlassesEvent::AccGyro {
+                                accelerometer,
+                                gyroscope,
+                                timestamp: acc_ts,
+                            });
+                        }
                     }
                 }
+                17 => {
+                    let packet: &CombinedPacket = bytemuck::cast_ref(&packet_data);
+                    let timestamp = packet.timestamp / 1000;
+                    self.pending_events.push_back(GlassesEvent::AccGyro {
+                        accelerometer: Vector3::from_data(nalgebra::ArrayStorage(
+                            [packet.accelerometer; 1],
+                        )),
+                        gyroscope: Vector3::from_data(nalgebra::ArrayStorage(
+                            [packet.gyroscope; 1],
+                        )),
+                        timestamp,
+                    });
+                    self.pending_events.push_back(GlassesEvent::Magnetometer {
+                        magnetometer: Vector3::from_data(nalgebra::ArrayStorage(
+                            [packet.magnetometer; 1],
+                        )),
+                        timestamp,
+                    });
+                    // NOTE: was always zero on my Max
+                    self.handle_key_press(packet.keys_pressed);
+                    self.handle_proxy_sensor(packet.proxy_sensor);
+                }
+                _ => {}
             }
         }
+        Ok(self.pending_events.pop_front().unwrap())
     }
 
     fn get_display_mode(&mut self) -> Result<DisplayMode> {
@@ -160,28 +169,98 @@ impl ARGlasses for RokidAir {
     }
 
     fn display_fov(&self) -> f32 {
-        // 21° is the advertised FOV
-        // 20° is the (dynamically) measured one. It works better with normal PD settings
-        20f32.to_radians()
+        match self.model {
+            RokidModel::Air => {
+                // 21° is the advertised FOV
+                // 20° is the (dynamically) measured one. It works better with normal PD settings
+                20f32.to_radians()
+            }
+            RokidModel::Max => {
+                // Measured
+                23f32.to_radians()
+            }
+        }
     }
 
     fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
+        let tilt = match self.model {
+            RokidModel::Air => 0.022,
+            RokidModel::Max => 0.07,
+        };
         let ipd = ipd as f64
             * match side {
                 Side::Left => -0.5,
                 Side::Right => 0.5,
             };
-        Translation3::new(ipd, 0.0, 0.0) * UnitQuaternion::from_euler_angles(0.022, 0.0, 0.0)
+        Translation3::new(ipd, 0.0, 0.0) * UnitQuaternion::from_euler_angles(tilt, 0.0, 0.0)
     }
 
     fn name(&self) -> &'static str {
-        "Rokid Air"
+        match self.model {
+            RokidModel::Air => "Rokid Air",
+            RokidModel::Max => "Rokid Max",
+        }
     }
 
     fn display_delay(&self) -> u64 {
-        15000
+        match self.model {
+            RokidModel::Air => 15000,
+            RokidModel::Max => 13000,
+        }
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct MiscPacket {
+    packet_type: u8,
+    seq: u32,
+    _unknown_0: [u8; 42],
+    keys_pressed: u8,
+    _unknown_1: [u8; 3],
+    proxy_sensor: u8,
+    _unknown_2: [u8; 12],
+}
+
+unsafe impl bytemuck::Zeroable for MiscPacket {}
+unsafe impl bytemuck::Pod for MiscPacket {}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct SensorPacket {
+    packet_type: u8,
+    sensor_type: u8,
+    seq: u32,
+    _unknown_0: [u8; 3],
+    timestamp: u64,
+    _unknown_1: [u8; 4],
+    vector: [f32; 3],
+    _unknown_2: [u8; 31],
+}
+
+unsafe impl bytemuck::Zeroable for SensorPacket {}
+unsafe impl bytemuck::Pod for SensorPacket {}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct CombinedPacket {
+    packet_type: u8,
+    timestamp: u64,
+    accelerometer: [f32; 3],
+    gyroscope: [f32; 3],
+    magnetometer: [f32; 3],
+    keys_pressed: u8,
+    proxy_sensor: u8,
+    _unknown_0: u8,
+    vsync_timestamp: u64,
+    _unknown_1: [u8; 3],
+    display_brightness: u8,
+    volume: u8,
+    _unknown_2: [u8; 3],
+}
+
+unsafe impl bytemuck::Zeroable for CombinedPacket {}
+unsafe impl bytemuck::Pod for CombinedPacket {}
 
 impl RokidAir {
     /// Vendor ID of the Rokid Air (Yes, it is 1234. Yes that's probably not very legit)
@@ -218,13 +297,44 @@ impl RokidAir {
                 || Error::Other("Could not find endpoint, wrong USB structure (probably)"),
             )?,
         )?;
+        let product_string = device_handle
+            .read_product_string_ascii(&device_handle.device().device_descriptor()?)?;
         let result = Self {
             device_handle,
             last_accelerometer: None,
             last_gyroscope: None,
-            key_was_pressed: false,
+            previous_key_states: 0,
             proxy_sensor_was_far: false,
+            model: if product_string.contains("Max") {
+                RokidModel::Max
+            } else {
+                RokidModel::Air
+            },
+            pending_events: Default::default(),
         };
         Ok(result)
+    }
+
+    fn handle_key_press(&mut self, keys_pressed: u8) {
+        let new_presses = keys_pressed & !self.previous_key_states;
+        for bit in 0..8 {
+            if new_presses & (1 << bit) != 0 {
+                self.pending_events.push_back(GlassesEvent::KeyPress(bit))
+            }
+        }
+        self.previous_key_states = keys_pressed;
+    }
+
+    fn handle_proxy_sensor(&mut self, value: u8) {
+        let proxy_sensor_is_far = value != 0;
+        let send_proxy_event = proxy_sensor_is_far != self.proxy_sensor_was_far;
+        self.proxy_sensor_was_far = proxy_sensor_is_far;
+        if send_proxy_event {
+            self.pending_events.push_back(if proxy_sensor_is_far {
+                GlassesEvent::ProximityFar
+            } else {
+                GlassesEvent::ProximityNear
+            });
+        }
     }
 }
