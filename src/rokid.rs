@@ -137,12 +137,12 @@ impl ARGlasses for RokidAir {
             &mut result,
             TIMEOUT,
         )?;
-        if result[1] == 0 {
-            Ok(DisplayMode::SameOnBoth)
-        } else if result[1] == 1 {
-            Ok(DisplayMode::Stereo)
-        } else {
-            Ok(DisplayMode::HighRefreshRate)
+        match result[1] {
+            0 => Ok(DisplayMode::SameOnBoth),
+            1 => Ok(DisplayMode::Stereo),
+            2 => Ok(DisplayMode::HalfSBS),
+            4 => Ok(DisplayMode::HighRefreshRateSBS),
+            _ => Ok(DisplayMode::HighRefreshRate),
         }
     }
 
@@ -151,6 +151,7 @@ impl ARGlasses for RokidAir {
             DisplayMode::SameOnBoth => 0,
             DisplayMode::Stereo => 1,
             DisplayMode::HighRefreshRate => 3,
+            DisplayMode::HighRefreshRateSBS => 4,
             _ => return Err(Error::Other("Display mode not supported")),
         };
         self.device_handle.write_control(
