@@ -7,7 +7,7 @@ This repository contains is a simplified Rust SDK for the following glasses:
 * XREAL Air
 * XREAL Light
 * Rokid Air
-* Rokid Max (Only display mode switching, no IMU data)
+* Rokid Max
 * Mad Gaze Glow
 
 It supports getting basic sensor data and setting up the display.
