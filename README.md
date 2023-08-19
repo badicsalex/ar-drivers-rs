@@ -25,7 +25,7 @@ Some people only need programmatic mode switching. For that, all you need to do 
 Install dependencies (rust and libudev)
 
 ```
-sudo apt install cargo libudev-dev
+sudo apt install cargo libudev-dev libstdc++-12-dev
 cargo update
 ```
 
