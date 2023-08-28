@@ -78,10 +78,10 @@ impl ARGlasses for NrealLight {
 
     fn set_display_mode(&mut self, display_mode: DisplayMode) -> Result<()> {
         let display_mode_byte = match display_mode {
-            DisplayMode::SameOnBoth => 1,
-            DisplayMode::HalfSBS => 2,
-            DisplayMode::Stereo => 3,
-            DisplayMode::HighRefreshRateSBS => 4,
+            DisplayMode::SameOnBoth => b'1',
+            DisplayMode::HalfSBS => b'2',
+            DisplayMode::Stereo => b'3',
+            DisplayMode::HighRefreshRateSBS => b'4',
             _ => return Err(Error::Other("Display mode not supported")),
         };
         let result = self.run_command(Packet {
