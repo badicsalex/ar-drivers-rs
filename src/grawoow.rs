@@ -63,12 +63,12 @@ impl ARGlasses for GrawoowG530 {
     }
 
     fn display_fov(&self) -> f32 {
-        // TODO, not measured
-        23f32.to_radians()
+        // Measurement result
+        22f32.to_radians()
     }
 
     fn imu_to_display_matrix(&self, side: Side, ipd: f32) -> Isometry3<f64> {
-        // TODO
+        // TODO: use calibration data if possible
         let side_multiplier = match side {
             Side::Left => -0.5,
             Side::Right => 0.5,
@@ -101,7 +101,7 @@ impl GrawoowG530 {
     /// Product ID of the OV580 on the G530
     pub const OV580_PID: u16 = 0x0f87;
 
-    const DISPLAY_TILT: f64 = -0.265;
+    const DISPLAY_TILT: f64 = -0.11;
     const DISPLAY_DIVERGENCE: f64 = 0.02;
 
     /// Connect to a specific glasses, based on the two USB fds
