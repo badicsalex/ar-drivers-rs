@@ -36,6 +36,8 @@
 
 use nalgebra::{Isometry3, Matrix3, UnitQuaternion, Vector2, Vector3};
 
+#[cfg(feature = "grawoow")]
+pub mod grawoow;
 #[cfg(feature = "mad_gaze")]
 pub mod mad_gaze;
 #[cfg(feature = "nreal")]
@@ -236,6 +238,10 @@ pub fn any_glasses() -> Result<Box<dyn ARGlasses>> {
     };
     #[cfg(feature = "nreal")]
     if let Ok(glasses) = nreal_light::NrealLight::new() {
+        return Ok(Box::new(glasses));
+    };
+    #[cfg(feature = "grawoow")]
+    if let Ok(glasses) = grawoow::GrawoowG530::new() {
         return Ok(Box::new(glasses));
     };
     #[cfg(feature = "mad_gaze")]

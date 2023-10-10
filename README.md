@@ -8,6 +8,7 @@ This repository contains is a simplified Rust SDK for the following glasses:
 * XREAL Light
 * Rokid Air
 * Rokid Max
+* Grawoow G530 (a.k.a. Metavision M53)
 * Mad Gaze Glow
 
 It supports getting basic sensor data and setting up the display.
@@ -69,4 +70,4 @@ Reverse engineering explicitly allowed in the EU for interworking purposes.
 It's probably fair use everywhere else, but you should check your own
 country's laws.
 
-The project is not affiliated with XREAL, Mad Gaze, Rokid, or any other related entities. 
+The project is not affiliated with any of the manufacturers or their related entities.
