@@ -16,7 +16,7 @@ It supports getting basic sensor data and setting up the display.
 While only the these glasses is supported right now, if I could get my hands on some other
 ones, I'd happily support them too.
 
-There's a [somewhat detailed blog post documenting the various protocols](https://voidcomputing.hu/blog/good-bad-ugly/)
+There's are two [somewhat detailed blog posts](https://voidcomputing.hu/blog/good-bad-ugly/) documenting [the various protocols](https://voidcomputing.hu/blog/worse-better-prettier/)
 too. So if you're only interested in that, you won't even need to read Rust code :)
 
 ## 3D SBS mode switching
