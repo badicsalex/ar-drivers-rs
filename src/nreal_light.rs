@@ -153,9 +153,9 @@ impl NrealLight {
     pub const OV580_PID: u16 = 0x0680;
 
     /// Unique camera type name for the left SLAM camera
-    pub const LEFT_SLAM_CAM: &str = "Nreal Light SLAM left";
+    pub const LEFT_SLAM_CAM: &'static str = "Nreal Light SLAM left";
     /// Unique camera type name for the right SLAM camera
-    pub const RIGHT_SLAM_CAM: &str = "Nreal Light SLAM right";
+    pub const RIGHT_SLAM_CAM: &'static str = "Nreal Light SLAM right";
 
     const DISPLAY_TILT: f64 = -0.265;
     const DISPLAY_DIVERGENCE: f64 = 0.02;
