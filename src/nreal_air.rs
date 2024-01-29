@@ -19,6 +19,7 @@ use crate::{util::crc32_adler, ARGlasses, DisplayMode, Error, GlassesEvent, Resu
 
 /// The main structure representing a connected Nreal Air glasses
 pub struct NrealAir {
+    model: AirModel,
     device: HidDevice,
     pending_packets: VecDeque<McuPacket>,
     imu_device: ImuDevice,
@@ -26,6 +27,34 @@ pub struct NrealAir {
 
 const COMMAND_TIMEOUT: i32 = 1000;
 const IMU_TIMEOUT: i32 = 250;
+
+const NREAL_VID: u16 = 0x3318;
+const AIR_PID: u16 = 0x0424;
+const AIR_2_PID: u16 = 0x0428;
+const AIR_2_PRO_PID: u16 = 0x0432;
+
+/// Describes the particular Air model.
+pub enum AirModel {
+    /// XREAL Air (original)
+    Air,
+    /// XREAL Air 2
+    Air2,
+    /// XREAL Air 2 Pro
+    Air2Pro,
+}
+
+impl TryFrom<u16> for AirModel {
+    type Error = Error;
+
+    fn try_from(val: u16) -> Result<AirModel> {
+        match val {
+            AIR_PID => Ok(AirModel::Air),
+            AIR_2_PID => Ok(AirModel::Air2),
+            AIR_2_PRO_PID => Ok(AirModel::Air2Pro),
+            _ => Err(Error::Other("unsupported XREAL product")),
+        }
+    }
+}
 
 impl ARGlasses for NrealAir {
     fn serial(&mut self) -> Result<String> {
@@ -117,15 +146,20 @@ impl ARGlasses for NrealAir {
     }
 
     fn name(&self) -> &'static str {
-        "Nreal Air"
+        match self.model {
+            AirModel::Air => "XREAL Air",
+            AirModel::Air2 => "XREAL Air 2",
+            AirModel::Air2Pro => "XREAL Air 2 Pro",
+        }
     }
 }
 
 impl NrealAir {
     /// Vendor ID of the NReal Air's components
-    pub const VID: u16 = 0x3318;
-    /// Product ID of the NReal Air's components
-    pub const PID: u16 = 0x0424;
+    pub const VID: u16 = NREAL_VID;
+    /// Product ID of the NReal Air 1's components
+    #[deprecated]
+    pub const PID: u16 = AIR_PID;
 
     const DISPLAY_DIVERGENCE: f64 = 0.017;
 
@@ -133,23 +167,22 @@ impl NrealAir {
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
     pub fn new(fd: isize) -> Result<Self> {
-        Self::new_common(
-            HidApi::new_without_enumerate()?.wrap_sys_device(fd, 4)?,
-            ImuDevice::new(fd)?,
-        )
+        let device = HidApi::new_without_enumerate()?.wrap_sys_device(fd, 4)?;
+        let pid = device.get_device_info()?.product_id();
+        let model = AirModel::try_from(pid)?;
+        Self::new_common(model, device, ImuDevice::new(fd)?)
     }
 
     /// Find a connected Nreal Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        Self::new_common(
-            open_vid_pid_endpoint(Self::VID, Self::PID, 4)?,
-            ImuDevice::new()?,
-        )
+        let (model, device) = open_nreal_endpoint(4)?;
+        Self::new_common(model, device, ImuDevice::new()?)
     }
-    fn new_common(device: HidDevice, imu_device: ImuDevice) -> Result<Self> {
+    fn new_common(model: AirModel, device: HidDevice, imu_device: ImuDevice) -> Result<Self> {
         let mut result = Self {
+            model,
             device,
             pending_packets: Default::default(),
             imu_device,
@@ -239,7 +272,8 @@ impl ImuDevice {
 
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        Self::new_device(open_vid_pid_endpoint(NrealAir::VID, NrealAir::PID, 3)?)
+        let (_, device) = open_nreal_endpoint(3)?;
+        Self::new_device(device)
     }
     fn new_device(device: HidDevice) -> Result<Self> {
         let mut result = Self {
@@ -472,14 +506,15 @@ impl ImuPacket {
 }
 
 #[cfg(not(target_os = "android"))]
-fn open_vid_pid_endpoint(vid: u16, pid: u16, interface: i32) -> Result<HidDevice> {
+fn open_nreal_endpoint(interface: i32) -> Result<(AirModel, HidDevice)> {
     let hidapi = HidApi::new()?;
     for device in hidapi.device_list() {
-        if device.vendor_id() == vid
-            && device.product_id() == pid
-            && device.interface_number() == interface
-        {
-            return Ok(device.open_device(&hidapi)?);
+        if device.vendor_id() == NREAL_VID && device.interface_number() == interface {
+            let model = match AirModel::try_from(device.product_id()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            return Ok((model, device.open_device(&hidapi)?));
         }
     }
     Err(Error::NotFound)
