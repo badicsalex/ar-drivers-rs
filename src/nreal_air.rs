@@ -12,10 +12,12 @@ use std::collections::VecDeque;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use hidapi::{HidApi, HidDevice};
-use nalgebra::{Isometry3, Translation3, UnitQuaternion, Vector3};
+use nalgebra::{Isometry3, Matrix3, Quaternion, Translation3, UnitQuaternion, Vector3};
 use tinyjson::JsonValue;
 
-use crate::{util::crc32_adler, ARGlasses, DisplayMode, Error, GlassesEvent, Result, Side};
+use crate::{
+    util::crc32_adler, ARGlasses, DisplayMatrices, DisplayMode, Error, GlassesEvent, Result, Side,
+};
 
 /// The main structure representing a connected Nreal Air glasses
 pub struct NrealAir {
@@ -141,6 +143,10 @@ impl ARGlasses for NrealAir {
             )
     }
 
+    fn display_matrices(&self) -> Result<(DisplayMatrices, DisplayMatrices)> {
+        self.imu_device.displays.clone().ok_or(Error::NotFound)
+    }
+
     fn display_delay(&self) -> u64 {
         7000
     }
@@ -260,6 +266,7 @@ impl NrealAir {
 struct ImuDevice {
     device: HidDevice,
     config_json: JsonValue,
+    displays: Option<(DisplayMatrices, DisplayMatrices)>,
     gyro_bias: Vector3<f32>,
     accelerometer_bias: Vector3<f32>,
 }
@@ -279,6 +286,7 @@ impl ImuDevice {
         let mut result = Self {
             device,
             config_json: JsonValue::Null,
+            displays: None,
             gyro_bias: Default::default(),
             accelerometer_bias: Default::default(),
         };
@@ -310,18 +318,73 @@ impl ImuDevice {
     fn parse_config(&mut self) -> Result<()> {
         // XXX: This will panic if config is not in expected format.
         //      should probably return Err() instead.
+        self.displays = Self::parse_display_descriptors(&self.config_json["display"]);
         let cfg = &self.config_json["IMU"]["device_1"];
-        self.accelerometer_bias = Self::parse_vector(&cfg["accel_bias"]);
-        self.gyro_bias = Self::parse_vector(&cfg["gyro_bias"]);
+        self.accelerometer_bias = Self::parse_vector(&cfg["accel_bias"]).map(|c| c as f32);
+        self.gyro_bias = Self::parse_vector(&cfg["gyro_bias"]).map(|c| c as f32);
         Ok(())
     }
 
-    fn parse_vector(json: &JsonValue) -> Vector3<f32> {
+    fn parse_display_descriptors(json: &JsonValue) -> Option<(DisplayMatrices, DisplayMatrices)> {
+        let resolution = &json["resolution"];
+        let resolution = (
+            *resolution[0].get::<f64>().unwrap() as u32,
+            *resolution[1].get::<f64>().unwrap() as u32,
+        );
+
+        let side_descriptor =
+            |p_cfg: &JsonValue, q_cfg: &JsonValue, k_cfg: &JsonValue| -> DisplayMatrices {
+                let translation = Self::parse_vector(p_cfg);
+                let rotation = UnitQuaternion::from_quaternion(Self::parse_quaternion(q_cfg));
+                DisplayMatrices {
+                    intrinsic_matrix: Self::parse_matrix3(k_cfg),
+                    resolution,
+                    isometry: Translation3::from(translation) * rotation,
+                }
+            };
+        let mut left = side_descriptor(
+            &json["target_p_left_display"],
+            &json["target_q_left_display"],
+            &json["k_left_display"],
+        );
+        let mut right = side_descriptor(
+            &json["target_p_right_display"],
+            &json["target_q_right_display"],
+            &json["k_right_display"],
+        );
+        // The calibration seems to be based on a reference point near the right lens.
+        // We will center the translation component between the displays.
+        let mean = (left.isometry.translation.vector + right.isometry.translation.vector) * 0.5;
+        left.isometry.translation.vector -= mean;
+        right.isometry.translation.vector -= mean;
+        Some((left, right))
+    }
+
+    fn parse_vector(json: &JsonValue) -> Vector3<f64> {
         Vector3::new(
-            *json[0].get::<f64>().unwrap() as f32,
-            *json[1].get::<f64>().unwrap() as f32,
-            *json[2].get::<f64>().unwrap() as f32,
+            *json[0].get::<f64>().unwrap(),
+            *json[1].get::<f64>().unwrap(),
+            *json[2].get::<f64>().unwrap(),
         )
+    }
+
+    fn parse_quaternion(json: &JsonValue) -> Quaternion<f64> {
+        Quaternion::new(
+            *json[3].get::<f64>().unwrap(),
+            *json[0].get::<f64>().unwrap(),
+            *json[1].get::<f64>().unwrap(),
+            *json[2].get::<f64>().unwrap(),
+        )
+    }
+
+    fn parse_matrix3(json: &JsonValue) -> Matrix3<f64> {
+        let vals = json
+            .get::<Vec<_>>()
+            .unwrap()
+            .iter()
+            .map(|v| *v.get::<f64>().unwrap())
+            .collect::<Vec<f64>>();
+        Matrix3::from_row_slice(&vals)
     }
 
     fn command(&self, cmd_id: u8, data: &[u8]) -> Result<Vec<u8>> {

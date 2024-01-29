@@ -64,6 +64,8 @@ pub enum Error {
     SerialPortError(serialport::Error),
     /// No glasses were found.
     NotFound,
+    /// The feature is not available with this headset.
+    NotImplemented,
     /// Packet sending or reception timed out. Note that this is not the only
     /// timeout error that is sent (e.g. UsbError can contain a timeout), and
     /// also this is usually a fatal one.
@@ -101,6 +103,7 @@ impl std::fmt::Display for Error {
             #[cfg(feature = "serialport")]
             Error::SerialPortError(_) => "Serial error",
             Error::NotFound => "Glasses not found",
+            Error::NotImplemented => "Not implemented for these glasses",
             Error::PacketTimeout => "Packet timeout",
             Error::Other(s) => s,
         })
@@ -199,6 +202,10 @@ pub trait ARGlasses: Send {
     fn cameras(&self) -> Result<Vec<CameraDescriptor>> {
         Ok(Vec::new())
     }
+    /// Get the available display matrices
+    fn display_matrices(&self) -> Result<(DisplayMatrices, DisplayMatrices)> {
+        Err(Error::NotImplemented)
+    }
     /// The additional delay (in usecs) of the glasses' display from getting the data
     /// on DisplayPort. This is not really an absolute value, but more of
     /// a relative measure between different glasses.
@@ -223,6 +230,17 @@ pub struct CameraDescriptor {
     pub stereo_rotation: UnitQuaternion<f64>,
     /// Transformation from the IMU frame to the camera frame
     pub imu_to_camera: Isometry3<f64>,
+}
+
+/// Represents the decomposed extrinsic and intrinsic matrices for the display's lens.
+#[derive(Debug, Clone)]
+pub struct DisplayMatrices {
+    /// The intrinsic matrix of the display
+    pub intrinsic_matrix: Matrix3<f64>,
+    /// Native resolution of the display, in pixels.
+    pub resolution: (u32, u32),
+    /// Extrinsic matrix of the display; translation in meters.
+    pub isometry: Isometry3<f64>,
 }
 
 /// Convenience function to detect and connect to any of the supported glasses
