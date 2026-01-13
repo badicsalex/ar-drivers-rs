@@ -34,8 +34,10 @@ const NREAL_VID: u16 = 0x3318;
 const AIR_PID: u16 = 0x0424;
 const AIR_2_PID: u16 = 0x0428;
 const AIR_2_PRO_PID: u16 = 0x0432;
+const AIR_2_ULTRA_PID: u16 = 0x0426;
 
 /// Describes the particular Air model.
+#[derive(Debug, Clone, Copy)]
 pub enum AirModel {
     /// XREAL Air (original)
     Air,
@@ -43,6 +45,8 @@ pub enum AirModel {
     Air2,
     /// XREAL Air 2 Pro
     Air2Pro,
+    /// XREAL Air 2 Ultra
+    Air2Ultra,
 }
 
 impl TryFrom<u16> for AirModel {
@@ -53,7 +57,34 @@ impl TryFrom<u16> for AirModel {
             AIR_PID => Ok(AirModel::Air),
             AIR_2_PID => Ok(AirModel::Air2),
             AIR_2_PRO_PID => Ok(AirModel::Air2Pro),
+            AIR_2_ULTRA_PID => Ok(AirModel::Air2Ultra),
             _ => Err(Error::Other("unsupported XREAL product")),
+        }
+    }
+}
+
+impl AirModel {
+    /// Returns the MCU/command interface number for this model
+    fn mcu_interface(&self) -> i32 {
+        match self {
+            AirModel::Air2Ultra => 0,
+            _ => 4,
+        }
+    }
+
+    /// Returns the IMU interface number for this model
+    fn imu_interface(&self) -> i32 {
+        match self {
+            AirModel::Air2Ultra => 2,
+            _ => 3,
+        }
+    }
+
+    /// Returns the maximum IMU packet size for this model
+    fn imu_packet_size(&self) -> usize {
+        match self {
+            AirModel::Air2Ultra => 0x200,
+            _ => 0x40,
         }
     }
 }
@@ -156,6 +187,7 @@ impl ARGlasses for NrealAir {
             AirModel::Air => "XREAL Air",
             AirModel::Air2 => "XREAL Air 2",
             AirModel::Air2Pro => "XREAL Air 2 Pro",
+            AirModel::Air2Ultra => "XREAL Air 2 Ultra",
         }
     }
 }
@@ -173,18 +205,26 @@ impl NrealAir {
     /// Mainly made to work around android permission issues
     #[cfg(target_os = "android")]
     pub fn new(fd: isize) -> Result<Self> {
-        let device = HidApi::new_without_enumerate()?.wrap_sys_device(fd, 4)?;
-        let pid = device.get_device_info()?.product_id();
-        let model = AirModel::try_from(pid)?;
-        Self::new_common(model, device, ImuDevice::new(fd)?)
+        // First, get the device info to determine the model
+        let hidapi = HidApi::new_without_enumerate()?;
+        // Try MCU interface 4 first (for Air, Air 2, Air 2 Pro), then 0 (for Air 2 Ultra)
+        let (device, model) = if let Ok(dev) = hidapi.wrap_sys_device(fd, 4) {
+            let pid = dev.get_device_info()?.product_id();
+            (dev, AirModel::try_from(pid)?)
+        } else {
+            let dev = hidapi.wrap_sys_device(fd, 0)?;
+            let pid = dev.get_device_info()?.product_id();
+            (dev, AirModel::try_from(pid)?)
+        };
+        Self::new_common(model, device, ImuDevice::new(fd, model)?)
     }
 
     /// Find a connected Nreal Air device and connect to it. (And claim the USB interface)
     /// Only one instance can be alive at a time
     #[cfg(not(target_os = "android"))]
     pub fn new() -> Result<Self> {
-        let (model, device) = open_nreal_endpoint(4)?;
-        Self::new_common(model, device, ImuDevice::new()?)
+        let (model, mcu_device, imu_device) = open_nreal_air()?;
+        Self::new_common(model, mcu_device, ImuDevice::new_device(imu_device, model)?)
     }
     fn new_common(model: AirModel, device: HidDevice, imu_device: ImuDevice) -> Result<Self> {
         let mut result = Self {
@@ -265,6 +305,7 @@ impl NrealAir {
 
 struct ImuDevice {
     device: HidDevice,
+    model: AirModel,
     config_json: JsonValue,
     displays: Option<(DisplayMatrices, DisplayMatrices)>,
     gyro_bias: Vector3<f32>,
@@ -273,18 +314,18 @@ struct ImuDevice {
 
 impl ImuDevice {
     #[cfg(target_os = "android")]
-    pub fn new(fd: isize) -> Result<Self> {
-        Self::new_device(HidApi::new_without_enumerate()?.wrap_sys_device(fd, 3)?)
+    pub fn new(fd: isize, model: AirModel) -> Result<Self> {
+        let imu_iface = model.imu_interface();
+        Self::new_device(
+            HidApi::new_without_enumerate()?.wrap_sys_device(fd, imu_iface)?,
+            model,
+        )
     }
 
-    #[cfg(not(target_os = "android"))]
-    pub fn new() -> Result<Self> {
-        let (_, device) = open_nreal_endpoint(3)?;
-        Self::new_device(device)
-    }
-    fn new_device(device: HidDevice) -> Result<Self> {
+    fn new_device(device: HidDevice, model: AirModel) -> Result<Self> {
         let mut result = Self {
             device,
+            model,
             config_json: JsonValue::Null,
             displays: None,
             gyro_bias: Default::default(),
@@ -396,8 +437,9 @@ impl ImuDevice {
             .serialize()
             .ok_or(Error::Other("Couldn't get acknowledgement to command"))?,
         )?;
+        let packet_size = self.model.imu_packet_size();
         for _ in 0..64 {
-            let mut data = [0u8; 0x40];
+            let mut data = vec![0u8; packet_size];
             let result_size = self.device.read_timeout(&mut data, IMU_TIMEOUT)?;
             if result_size == 0 {
                 return Err(Error::PacketTimeout);
@@ -540,16 +582,26 @@ unsafe impl bytemuck::Zeroable for ImuRawPacket {}
 unsafe impl bytemuck::Pod for ImuRawPacket {}
 
 impl ImuPacket {
-    fn deserialize(data: &[u8; 0x40]) -> Option<ImuPacket> {
-        let raw_packet: &ImuRawPacket = bytemuck::cast_ref(data);
+    fn deserialize(data: &[u8]) -> Option<ImuPacket> {
+        let raw_packet: &ImuRawPacket = bytemuck::from_bytes(&data[..0x40]);
         if raw_packet.head != 0xaa {
             return None;
         }
         // TODO: maybe check CRC?
-        Some(ImuPacket {
-            cmd_id: raw_packet.cmd_id,
-            data: raw_packet.data[0..(raw_packet.length as usize - 3)].into(),
-        })
+        let data_len = (raw_packet.length as usize).saturating_sub(3);
+        if data_len <= 56 {
+            // Standard packet - data fits in ImuRawPacket
+            Some(ImuPacket {
+                cmd_id: raw_packet.cmd_id,
+                data: raw_packet.data[..data_len].into(),
+            })
+        } else {
+            // Large packet (Air 2 Ultra) - data extends beyond ImuRawPacket
+            Some(ImuPacket {
+                cmd_id: raw_packet.cmd_id,
+                data: data[8..8 + data_len].into(),
+            })
+        }
     }
 
     fn serialize(&self) -> Option<[u8; 0x40]> {
@@ -569,16 +621,51 @@ impl ImuPacket {
 }
 
 #[cfg(not(target_os = "android"))]
-fn open_nreal_endpoint(interface: i32) -> Result<(AirModel, HidDevice)> {
+fn open_nreal_air() -> Result<(AirModel, HidDevice, HidDevice)> {
     let hidapi = HidApi::new()?;
+
+    // First find the model by checking MCU interfaces
+    let mut found_model: Option<AirModel> = None;
+    let mut mcu_device: Option<HidDevice> = None;
+
     for device in hidapi.device_list() {
-        if device.vendor_id() == NREAL_VID && device.interface_number() == interface {
-            let model = match AirModel::try_from(device.product_id()) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            return Ok((model, device.open_device(&hidapi)?));
+        if device.vendor_id() != NREAL_VID {
+            continue;
+        }
+        let pid = device.product_id();
+        let model = match AirModel::try_from(pid) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if device.interface_number() == model.mcu_interface() {
+            found_model = Some(model);
+            mcu_device = Some(device.open_device(&hidapi)?);
+            break;
         }
     }
-    Err(Error::NotFound)
+
+    let model = found_model.ok_or(Error::NotFound)?;
+    let mcu = mcu_device.ok_or(Error::NotFound)?;
+
+    // Now open the IMU interface for this model
+    let imu_iface = model.imu_interface();
+    let mut imu_device: Option<HidDevice> = None;
+
+    for device in hidapi.device_list() {
+        if device.vendor_id() != NREAL_VID {
+            continue;
+        }
+        let pid = device.product_id();
+        if AirModel::try_from(pid).is_err() {
+            continue;
+        }
+        if device.interface_number() == imu_iface {
+            imu_device = Some(device.open_device(&hidapi)?);
+            break;
+        }
+    }
+
+    let imu = imu_device.ok_or(Error::NotFound)?;
+
+    Ok((model, mcu, imu))
 }
