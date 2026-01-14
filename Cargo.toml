@@ -36,4 +36,4 @@ hidapi = { version = "2.4.1", optional = true }
 
 [dev-dependencies]
 clap = { version = "4.3", features = ["derive"] }
-opencv = { version = "0.84.2", default-features = false, features = ["highgui", "imgproc", "calib3d"] }
+opencv = { version = "0.89.0", default-features = false, features = ["highgui", "imgproc", "calib3d"] }
