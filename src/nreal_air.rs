@@ -570,53 +570,57 @@ struct ImuPacket {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-struct ImuRawPacket {
+struct ImuPacketHeader {
     head: u8,
     checksum: u32,
     length: u16,
     cmd_id: u8,
-    data: [u8; 56],
 }
 
-unsafe impl bytemuck::Zeroable for ImuRawPacket {}
-unsafe impl bytemuck::Pod for ImuRawPacket {}
+unsafe impl bytemuck::Zeroable for ImuPacketHeader {}
+unsafe impl bytemuck::Pod for ImuPacketHeader {}
+
+const IMU_HEADER_SIZE: usize = std::mem::size_of::<ImuPacketHeader>();
 
 impl ImuPacket {
     fn deserialize(data: &[u8]) -> Option<ImuPacket> {
-        let raw_packet: &ImuRawPacket = bytemuck::from_bytes(&data[..0x40]);
-        if raw_packet.head != 0xaa {
+        if data.len() < IMU_HEADER_SIZE {
             return None;
         }
-        // TODO: maybe check CRC?
-        let data_len = (raw_packet.length as usize).saturating_sub(3);
-        if data_len <= 56 {
-            // Standard packet - data fits in ImuRawPacket
-            Some(ImuPacket {
-                cmd_id: raw_packet.cmd_id,
-                data: raw_packet.data[..data_len].into(),
-            })
-        } else {
-            // Large packet (Air 2 Ultra) - data extends beyond ImuRawPacket
-            Some(ImuPacket {
-                cmd_id: raw_packet.cmd_id,
-                data: data[8..8 + data_len].into(),
-            })
+
+        let header: &ImuPacketHeader = bytemuck::from_bytes(&data[..IMU_HEADER_SIZE]);
+        if header.head != 0xaa {
+            return None;
         }
+
+        // length includes cmd_id (1 byte) + checksum bytes (2 bytes) + data
+        let data_len = (header.length as usize).saturating_sub(3);
+        let data_end = IMU_HEADER_SIZE + data_len;
+
+        if data_end > data.len() {
+            return None;
+        }
+
+        // TODO: maybe check CRC?
+        Some(ImuPacket {
+            cmd_id: header.cmd_id,
+            data: data[IMU_HEADER_SIZE..data_end].into(),
+        })
     }
 
     fn serialize(&self) -> Option<[u8; 0x40]> {
-        let mut data = [0u8; 56];
-        data[0..self.data.len()].copy_from_slice(&self.data);
-        let mut raw_packet = ImuRawPacket {
+        let mut result = [0u8; 0x40];
+        let header = ImuPacketHeader {
             head: 0xaa,
             checksum: 0,
             length: self.data.len() as u16 + 3,
             cmd_id: self.cmd_id,
-            data,
         };
-        raw_packet.checksum =
-            crc32_adler(&bytemuck::bytes_of(&raw_packet)[5..(5 + raw_packet.length as usize)]);
-        Some(bytemuck::cast(raw_packet))
+        result[..IMU_HEADER_SIZE].copy_from_slice(bytemuck::bytes_of(&header));
+        result[IMU_HEADER_SIZE..IMU_HEADER_SIZE + self.data.len()].copy_from_slice(&self.data);
+        let checksum = crc32_adler(&result[5..(5 + header.length as usize)]);
+        result[1..5].copy_from_slice(&checksum.to_le_bytes());
+        Some(result)
     }
 }
 
