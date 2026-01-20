@@ -4,7 +4,7 @@
 
 This repository contains is a simplified Rust SDK for the following glasses:
 
-* XREAL Air, Air 2, and Air 2 Pro
+* XREAL Air, Air 2, Air 2 Pro and Air 2 Ultra
 * XREAL Light
 * Rokid Air
 * Rokid Max
