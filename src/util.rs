@@ -23,6 +23,7 @@ pub fn get_device_vid_pid(vid: u16, pid: u16) -> Result<Device<GlobalContext>> {
 }
 
 #[cfg(feature = "rusb")]
+#[allow(dead_code)]
 pub fn get_interface_for_endpoint(
     device: &Device<GlobalContext>,
     endpoint_address: u8,

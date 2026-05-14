@@ -284,17 +284,17 @@ impl NrealAir {
     }
 
     fn run_command(&mut self, command: McuPacket) -> Result<Vec<u8>> {
-        self.device.write(
-            &command
-                .serialize()
-                .ok_or(Error::Other("Packet serialization failed"))?,
-        )?;
+        let expected_cmd_id = command.cmd_id;
+        let packet = command
+            .serialize()
+            .ok_or(Error::Other("Packet serialization failed"))?;
+        write_hid_packet(&self.device, &packet)?;
 
         for _ in 0..64 {
             let packet = self
                 .read_packet(COMMAND_TIMEOUT)?
                 .ok_or(Error::PacketTimeout)?;
-            if packet.cmd_id == command.cmd_id {
+            if packet.cmd_id == expected_cmd_id {
                 return Ok(packet.data);
             }
             self.pending_packets.push_back(packet);
@@ -429,14 +429,13 @@ impl ImuDevice {
     }
 
     fn command(&self, cmd_id: u8, data: &[u8]) -> Result<Vec<u8>> {
-        self.device.write(
-            &ImuPacket {
-                cmd_id,
-                data: data.into(),
-            }
-            .serialize()
-            .ok_or(Error::Other("Couldn't get acknowledgement to command"))?,
-        )?;
+        let command = ImuPacket {
+            cmd_id,
+            data: data.into(),
+        }
+        .serialize()
+        .ok_or(Error::Other("Couldn't get acknowledgement to command"))?;
+        write_hid_packet(&self.device, &command)?;
         let packet_size = self.model.imu_packet_size();
         for _ in 0..64 {
             let mut data = vec![0u8; packet_size];
@@ -672,4 +671,20 @@ fn open_nreal_air() -> Result<(AirModel, HidDevice, HidDevice)> {
     let imu = imu_device.ok_or(Error::NotFound)?;
 
     Ok((model, mcu, imu))
+}
+
+#[cfg(target_os = "windows")]
+fn write_hid_packet(device: &HidDevice, payload: &[u8; 0x40]) -> Result<()> {
+    // Windows HID writes need the leading report ID byte even for unnumbered reports.
+    // The Air replies on interfaces 3/4 once the payload is sent as [0x00 | 64-byte packet].
+    let mut report = [0u8; 0x41];
+    report[1..].copy_from_slice(payload);
+    device.write(&report)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn write_hid_packet(device: &HidDevice, payload: &[u8; 0x40]) -> Result<()> {
+    device.write(payload)?;
+    Ok(())
 }
