@@ -642,7 +642,7 @@ impl NrealLightSlamCamera {
         Self::new_common(get_device_vid_pid(NrealLight::OV580_VID, NrealLight::OV580_PID)?.open()?)
     }
 
-    fn new_common(mut device_handle: rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Self> {
+    fn new_common(device_handle: rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Self> {
         const UVC_SET_CUR: u8 = 0x01;
         const UVC_VS_COMMIT_CONTROL: u16 = 0x02;
         device_handle.set_auto_detach_kernel_driver(true)?;
