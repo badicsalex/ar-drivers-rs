@@ -1,0 +1,48 @@
+name: CI (Windows build)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & test (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'headlook/Cargo.toml') }}
+
+      - name: Cargo check (headlook)
+        run: cargo check -p headlook --target x86_64-pc-windows-msvc
+
+      - name: Cargo test (platform-independent core)
+        run: cargo test -p headlook --target x86_64-pc-windows-msvc --lib
+
+      - name: Build release
+        run: cargo build -p headlook --target x86_64-pc-windows-msvc --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: headlook
+          path: target/x86_64-pc-windows-msvc/release/headlook.exe

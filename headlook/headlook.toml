@@ -1,0 +1,61 @@
+# HeadLook configuration file.
+# Edit values to taste, save the file, then choose "Reload config" from the tray menu
+# (or press the hotkey again to toggle a reload on next activation). Changes that do not
+# require a restart are picked up automatically within ~2 seconds.
+
+[tracking]
+# Global hotkey to toggle head tracking (does NOT suppress the keys from reaching the game).
+# Separate keys with '+'. Examples: "Ctrl+A+R", "Ctrl+Shift+H", "Alt+G", "RControl+LWin+H".
+hotkey = "Ctrl+A+R"
+# Start tracking automatically on launch.
+enabled_on_start = true
+# Pixels per degree of head rotation. Higher = faster aiming. Typical 8..25.
+sensitivity = 14.0
+# Deadzone in degrees/second: head motion slower than this is ignored (stops drift jitter).
+deadzone_dps = 1.5
+# Vertical lock: only yaw (left/right) is tracked, pitch (up/down) is ignored.
+vertical_lock = false
+# Invert pitch (invert the up/down axes).
+invert_pitch = false
+# Invert yaw (invert the left/right axes).
+invert_yaw = false
+# Non-linear aiming response. accel=1 -> linear; >1 -> slower near center, faster at edges.
+accel_exponent = 1.6
+# Reference speed (deg/s) at which accel_exponent is evaluated.
+accel_reference_dps = 45.0
+# Max cursor speed in pixels/second (safety clamp). 0 = unlimited.
+max_speed_pps = 0.0
+# Keys that pause tracking while held (besides the left mouse button), e.g. ["RMB", "Shift"].
+pause_keys = ["RMB"]
+
+[filter]
+# Sensor fusion algorithm. One of: "complementary", "madgwick".
+mode = "complementary"
+# Complementary / Mahony correction gain (0..1). Higher = accel trust / faster leveling.
+complementary_gain = 0.04
+# Madgwick beta (gradient step). Higher = faster convergence, more accel noise.
+madgwick_beta = 0.1
+# Exponential smoothing time constant (seconds) on the output angular rate. 0 = off.
+smoothing_tau = 0.012
+# Automatically learn gyroscope bias while the head is still.
+auto_gyro_bias = true
+
+[mouse]
+# Mouse event emission rate in Hz (coalescing). 0 = emit on every IMU sample.
+emit_rate = 500
+# Provide audible feedback (a beep) when tracking is toggled.
+sound_feedback = true
+
+[tray]
+# Show a balloon notification when tracking is toggled on/off.
+notify_on_toggle = true
+
+[advanced]
+# Reconnect wait (seconds) after the glasses disconnect.
+reconnect_seconds = 1.5
+# Seconds of stillness required before (re)learning gyro bias.
+calibration_seconds = 1.0
+# Tracker thread priority: "normal", "above", "high", "realtime".
+thread_priority = "high"
+# Read timeout multiplier before declaring the device dead (each read is ~250ms).
+timeout_count = 40
