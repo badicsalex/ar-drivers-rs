@@ -1,3 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "headlook",
+]
+
 [package]
 name = "ar-drivers"
 description = "Opensource driver for Rokid, Nreal and some other AR glasses"
@@ -10,7 +17,7 @@ documentation = "https://docs.rs/ar-drivers"
 keywords = ["rokid", "ar"]
 categories = ["hardware-support"]
 license = "MIT"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# See more keys and their definitions at https://rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = ["mad_gaze", "rokid", "nreal", "grawoow"]
@@ -22,17 +29,16 @@ rokid = ["rusb"]
 [dependencies]
 bytemuck = { version = "1.13.1", optional = true }
 byteorder = "1.4"
-nalgebra = { version = "0.32.3", default-features=false, features = ["std"]}
+nalgebra = { version = "0.32.3", default-features = false, features = ["std"] }
 rusb = { version = "0.9.2", optional = true }
 serialport = { version = "4.2", optional = true }
 tinyjson = { version = "2.5.1", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
-hidapi = { version = "2.4.1", default-features=false, features = [ "linux-static-libusb" ], optional = true }
+hidapi = { version = "2.4.1", default-features = false, features = ["linux-static-libusb"], optional = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 hidapi = { version = "2.4.1", optional = true }
-
 
 [dev-dependencies]
 clap = { version = "4.3", features = ["derive"] }

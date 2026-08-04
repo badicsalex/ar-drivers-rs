@@ -1,0 +1,38 @@
+[package]
+name = "headlook"
+description = "Head-tracked mouse control for XREAL Air / compatible AR glasses on Windows"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["ImmerseMouse contributors"]
+license = "MIT"
+repository = "https://github.com/igrach-ded/ImmerseMouse"
+readme = "README.md"
+
+[dependencies]
+ar-drivers = { path = "..", default-features = false, features = ["nreal"] }
+nalgebra = { version = "0.32.3", default-features = false, features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Media_Multimedia",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+] }
+
+[features]
+# Build without a console window (GUI-only). Enabled for the released .exe.
+no-console = []
+# Build with support for every AR glasses type supported by ar-drivers.
+all-glasses = ["ar-drivers/mad_gaze", "ar-drivers/rokid", "ar-drivers/grawoow"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
