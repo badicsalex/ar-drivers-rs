@@ -123,3 +123,7 @@ emit_rate = 500            # mouse event rate (Hz); 0 = every IMU sample
 ## License
 
 MIT (same as `ar-drivers`).
+
+---
+
+Built and tested via GitHub Actions (`.github/workflows/ci.yml`): `cargo check` → `cargo test` → `cargo build --release` on `x86_64-pc-windows-msvc`.
